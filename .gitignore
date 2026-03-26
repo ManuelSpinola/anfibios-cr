@@ -5,3 +5,5 @@
 
 **/*.quarto_ipynb
 .Rproj.user
+datos/0019019-260226173443078.csv
+vectores_para_modelos/datos_h8_pa_long.gpkg
