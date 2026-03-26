@@ -1,0 +1,696 @@
+---
+title: "`r params$species`"
+subtitle: "`r paste(tax_especie$order, '>', tax_especie$family)`"
+params:
+  species: "Craugastor gollmeri"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Ver código"
+    theme: cosmo
+    embed-resources: true
+execute:
+  message: false
+  warning: false
+---
+
+```{r}
+library(tidyverse)
+library(easystats)
+library(here)
+library(sf)
+library(terra)
+library(tidymodels)
+library(tidysdm)
+library(h3sdm)
+library(tinytable)
+library(mgcv)
+library(MuMIn)
+library(networkD3)
+library(htmlwidgets)
+library(ggthemes)
+```
+
+```{r}
+all |> 
+  filter(order == "Anura") |> 
+  distinct(family) |> 
+  arrange(family)
+```
+
+
+```{r}
+all |> 
+  filter(family == "Craugastoridae") |> 
+  count(species) |> 
+  arrange(n)
+```
+
+
+## 1. Datos de presencia y pseudoausencias
+
+```{r}
+#| label: cargar-datos
+
+cr                <- readRDS(here("vectores_para_modelos/cr.rds"))
+taxonomia         <- readRDS(here("datos/taxonomia.rds"))
+predictors        <- readRDS(here("vectores_para_modelos/predictores_presente_finales_h8_sf.rds"))
+predictors_futuro <- readRDS(here("vectores_para_modelos/predictores_futuro_finales_h8_sf.rds"))
+```
+
+
+```{r}
+#| label: taxonomia
+
+tax_especie <- taxonomia |> filter(species == params$species)
+```
+
+```{r}
+#| label: registros-especie
+
+especie <- h3sdm_pa(
+  species           = params$species,
+  aoi_sf            = cr_outline_c,
+  res               = 8,
+  n_pseudoabs       = 0,
+  providers         = c("gbif", "inat"),
+  remove_duplicates = TRUE
+) |>
+  st_transform(5367)
+```
+
+
+```{r}
+sum(especie$presence == 1)
+```
+
+```{r}
+#| label: verificar-n
+
+n_celdas <- especie |>
+  filter(presence == 1) |>
+  summarise(n = n_distinct(h3_address)) |>
+  pull(n)
+
+cat("Celdas H3 ocupadas:", n_celdas, "\n")
+
+if (n_celdas < 30) {
+  msg <- glue::glue(
+    "ESPECIE DESCARTADA: solo {n_celdas} celdas H3 ocupadas (mínimo: 30)."
+  )
+  
+  if (isTRUE(getOption("knitr.in.progress"))) {
+    knitr::knit_exit(paste0("### Especie descartada\n\n", msg))
+  } else {
+    stop(msg)
+  }
+}
+```
+
+
+
+```{r}
+#| label: balancear
+
+set.seed(567)
+
+n_pres             <- sum(especie$presence == 1)
+presences_especie  <- especie |> filter(presence == 1)
+background_especie <- especie |> filter(presence == 0) |> slice_sample(n = n_pres * 1)
+especie_balanced_data <- bind_rows(presences_especie, background_especie)
+
+# Centroides para el mapa de registros en el reporte
+presencias_centroides <- presences_especie |> st_centroid()
+```
+
+```{r}
+#| label: mapa-presencias
+#| fig-cap: "Presencias (1) y pseudoausencias (0)"
+
+ggplot() +
+  geom_sf(data = cr) +
+  geom_sf(data = especie_balanced_data, aes(fill = presence)) +
+  scale_fill_manual(values = c("0" = "green", "1" = "red"),
+                    labels = c("Pseudoausencia", "Presencia")) +
+  labs(fill = NULL, title = params$species) +
+  theme_minimal()
+```
+
+------------------------------------------------------------------------
+
+## 2. Validación cruzada espacial
+
+```{r}
+#| label: cv-espacial
+
+set.seed(567)
+dat_especie <- h3sdm_data(especie_balanced_data, predictors) |>
+  drop_na()
+
+scv_especie <- h3sdm_spatial_cv(
+  dat_especie,
+  v        = 3,
+  cellsize = 30000,
+  square   = FALSE
+)
+```
+
+```{r}
+#| label: mapa-folds
+#| fig-cap: "Partición espacial (folds)"
+autoplot(scv_especie)
+```
+
+------------------------------------------------------------------------
+
+## 3. Preparación de la receta y fórmula
+
+```{r}
+#| label: receta
+gam_rec_especie <- h3sdm_recipe_gam(dat_especie) |>
+  step_normalize(starts_with("class_prop_"),
+                 starts_with("BIO"),
+                 starts_with("lsm_"))
+
+dat_especie_df     <- st_drop_geometry(dat_especie) |>
+  drop_na()
+
+# Filtrar predictores con pocos valores únicos
+min_unique <- 10
+
+predictores_validos <- dat_especie_df |>
+  select(-any_of(c("h3_address", "presence", "geometry", "x", "y"))) |>
+  summarise(across(everything(), n_distinct)) |>
+  pivot_longer(everything(), names_to = "variable", values_to = "n_unique") |>
+  filter(n_unique >= min_unique) |>
+  pull(variable)
+
+rec_prep_especie   <- prep(gam_rec_especie)
+dat_especie_scaled <- bake(rec_prep_especie, new_data = dat_especie_df) |>
+  drop_na()
+
+terminos    <- paste0('s(', predictores_validos, ', bs="ts")', collapse = " + ")
+formula_gam <- as.formula(paste('presence ~', terminos, '+ s(x, y, bs="tp")'))
+```
+
+------------------------------------------------------------------------
+
+## 4. Selección de variables
+
+```{r}
+#| label: seleccion-vars
+seleccionar_variables <- function(dat_especie, formula_gam, p_umbral = 0.05) {
+  
+  gam_inicial <- mgcv::gam(
+    formula_gam,
+    data      = dat_especie,
+    family    = binomial(link = "logit"),
+    method    = "REML",
+    select    = TRUE,
+    na.action = na.fail
+  )
+  
+  s_table         <- summary(gam_inicial)$s.table
+  p_valores       <- s_table[, "p-value"]
+  nombres         <- rownames(s_table)
+  nombres_filtrar <- nombres[!grepl("x,y", nombres)]
+  p_filtrar       <- p_valores[!grepl("x,y", nombres)]
+  vars_sig        <- gsub("s\\(|\\).*", "", nombres_filtrar[p_filtrar < p_umbral])
+  
+  if (length(vars_sig) == 0) {
+    formula_reducida <- as.formula("presence ~ s(x, y, bs='tp')")
+  } else {
+    terminos <- paste0('s(', vars_sig, ', bs="ts")', collapse = " + ")
+    formula_reducida <- as.formula(paste('presence ~', terminos, '+ s(x, y, bs="tp")'))
+  }
+  
+  list(variables = vars_sig, formula = formula_reducida)
+}
+
+resultado <- seleccionar_variables(dat_especie_scaled, formula_gam)
+```
+
+```{r}
+resultado
+```
+
+
+```{r}
+#| label: dredge
+gam_reduced_especie <- gam(
+  resultado$formula,
+  data      = dat_especie_scaled,
+  family    = binomial,
+  method    = "ML",
+  select    = TRUE,
+  na.action = na.fail
+)
+
+options(na.action = "na.fail")
+dredge_result_especie     <- dredge(gam_reduced_especie)
+best_model_especie        <- get.models(dredge_result_especie, subset = 1)[[1]]
+formula_gam_final_especie <- formula(best_model_especie)
+```
+
+```{r}
+formula_gam_final_especie
+```
+
+
+### Tabla de selección de modelos
+
+```{r}
+#| label: tabla-dredge
+dredge_result_especie |>
+  as.data.frame() |>
+  head(10) |>
+  tt(caption = "Top 10 modelos — selección por AICc")
+```
+
+------------------------------------------------------------------------
+
+## 5. Ajuste del modelo final
+
+```{r}
+#| label: ajuste-final
+gam_model <- parsnip::gen_additive_mod(mode = "classification") |>
+  set_engine("mgcv",
+             family = binomial(link = "logit"),
+             method = "REML")
+
+wf_especie            <- h3sdm_workflow_gam(gam_model, gam_rec_especie, formula_gam_final_especie)
+presence_data_especie <- dat_especie_scaled |> filter(presence == 1)
+mod_gam_especie       <- h3sdm_fit_model(wf_especie, scv_especie, presence_data_especie)
+modelo_ajustado_especie <- workflows::extract_fit_engine(mod_gam_especie$final_model)
+```
+
+```{r}
+summary(modelo_ajustado_especie)
+```
+
+
+### Resumen del modelo
+
+```{r}
+#| resumen-modelo
+extraer_resumen_modelo <- function(modelo_ajustado, p_umbral = 0.05) {
+  s <- summary(modelo_ajustado)
+  
+  tabla_smooth <- s$s.table |>
+  as.data.frame() |>
+  rownames_to_column("Término") |>
+  rename(
+    `GDL efectivos` = edf,
+    `GDL ref.`      = Ref.df,
+    `Chi²`          = Chi.sq,
+    `p-valor`       = `p-value`
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 4)),
+         significativo = `p-valor` < p_umbral)
+  
+  metricas <- tibble(
+    `R² ajustado`           = round(s$r.sq, 3),
+    `Devianza explicada (%)` = round(s$dev.expl * 100, 1),
+    `n`                      = s$n,
+    `REML`                   = round(s$sp.criterion, 3)
+  )
+  
+  list(smooth = tabla_smooth, metricas = metricas)
+}
+
+resumen   <- extraer_resumen_modelo(modelo_ajustado_especie)
+filas_sig <- which(resumen$smooth$significativo)
+
+resumen$smooth |>
+  select(-significativo) |>
+  tt(caption = "Términos suavizados del modelo GAM") |>
+  style_tt(i = filas_sig, background = "#e8f4e8", bold = TRUE)
+```
+
+```{r}
+#| label: metricas-gam
+tt(resumen$metricas, caption = "Métricas generales del modelo")
+```
+
+------------------------------------------------------------------------
+
+## 6. Métricas de evaluación (CV espacial)
+
+```{r}
+#| label: eval-metrics
+evaluation_metrics_especie <- h3sdm_eval_metrics(
+  fitted_model  = mod_gam_especie$cv_model,
+  presence_data = presence_data_especie
+)
+
+evaluation_metrics_especie |>
+  rename(
+    `Métrica`     = .metric,
+    `Estimador`   = .estimator,
+    `Media`       = mean,
+    `Error std`   = std_err,
+    `IC inferior` = conf_low,
+    `IC superior` = conf_high
+  ) |>
+  tt(digits = 2, caption = "Métricas de evaluación — CV espacial")
+```
+
+------------------------------------------------------------------------
+
+## 7. Distribución potencial — Presente
+
+```{r}
+#| label: prediccion-presente
+pred_presente_especie <- h3sdm_predict(mod_gam_especie, predictors)
+```
+
+```{r mapa-presente, fig.cap="Distribución potencial presente"}
+#| label: mapa-presente
+#| fig.cap: "Distribución potencial presente"
+
+ggplot() +
+  theme_minimal() +
+  geom_sf(data = pred_presente_especie, aes(fill = prediction), color = "transparent") +
+  geom_sf(data = cr, fill = "transparent", color = "grey30", linewidth = 0.3) +
+  scale_fill_viridis_c(name = "Idoneidad\nde hábitat", option = "B", direction = -1) +
+  labs(title = params$species, subtitle = "Escenario presente")
+```
+
+------------------------------------------------------------------------
+
+## 8. Distribución potencial — Futuro
+
+```{r prediccion-futuro}
+#| label: prediccion-futuro
+pred_futuro_especie <- h3sdm_predict(mod_gam_especie, predictors_futuro)
+```
+
+```{r}
+#| label: mapa-futuro
+#| fig-cap: "Distribución potencial futura"
+ggplot() +
+  theme_minimal() +
+  geom_sf(data = pred_futuro_especie, aes(fill = prediction), color = "transparent") +
+  geom_sf(data = cr, fill = "transparent", color = "grey30", linewidth = 0.3) +
+  scale_fill_viridis_c(name = "Idoneidad\nde hábitat", option = "B", direction = -1) +
+  labs(title = params$species, subtitle = "Escenario futuro")
+```
+
+------------------------------------------------------------------------
+
+## 9. Cambio presente → futuro
+
+```{r}
+#| label: comparacion
+comparacion <- pred_presente_especie |>
+  st_drop_geometry() |>
+  rename(presente = prediction) |>
+  left_join(
+    pred_futuro_especie |> st_drop_geometry() |> rename(futuro = prediction),
+    by = "h3_address"
+  ) |>
+  mutate(cambio = futuro - presente)
+
+comparacion_sf <- pred_presente_especie |>
+  select(h3_address, geometry) |>
+  left_join(comparacion, by = "h3_address")
+```
+
+```{r}
+#| label: mapa-cambio
+#| fig-cap: "Cambio en idoneidad (futuro − presente)"
+
+lim <- max(abs(comparacion$cambio), na.rm = TRUE)
+
+ggplot() +
+  theme_minimal() +
+  geom_sf(data = comparacion_sf, aes(fill = cambio), color = "transparent") +
+  geom_sf(data = cr, fill = "transparent", color = "grey30", linewidth = 0.3) +
+  scale_fill_distiller(
+    name    = "Cambio\nen idoneidad",
+    palette = "RdBu",
+    direction = 1,
+    limits  = c(-lim, lim)
+  ) +
+  labs(title = params$species, subtitle = "Diferencia futuro − presente")
+```
+
+```{r}
+summary(comparacion$cambio)
+```
+
+
+```{r}
+#| label: stats-cambio
+comparacion |>
+  summarise(
+    `Ganancia (n hex)`  = sum(cambio >  0.1, na.rm = TRUE),
+    `Pérdida (n hex)`   = sum(cambio < -0.1, na.rm = TRUE),
+    `Sin cambio (n hex)` = sum(abs(cambio) <= 0.1, na.rm = TRUE),
+    `Cambio medio`       = round(mean(cambio, na.rm = TRUE), 3)
+  ) |>
+  tt(caption = "Resumen de cambio presente → futuro")
+```
+
+### Clasificar el hábitat
+
+```{r}
+clasificar_habitat <- function(x) {
+  cut(x,
+      breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1),
+      labels = c("Muy bajo", "Bajo", "Medio", "Alto", "Muy alto"),
+      include.lowest = TRUE)
+}
+```
+
+### Comparación por área
+
+```{r}
+#| include: true
+# Clasificar ambos escenarios
+# Clasificar ambos escenarios
+presente_cat <- pred_presente_especie |>
+  mutate(
+    categoria = clasificar_habitat(prediction),
+    area_km2  = as.numeric(st_area(geometry)) / 1e6
+  )
+
+futuro_cat <- pred_futuro_especie |>
+  mutate(
+    categoria = clasificar_habitat(prediction),
+    area_km2  = as.numeric(st_area(geometry)) / 1e6
+  )
+
+# Sumar área por categoría
+area_presente <- presente_cat |>
+  st_drop_geometry() |>
+  group_by(categoria) |>
+  summarise(area_km2 = sum(area_km2)) |>
+  mutate(escenario = "Presente")
+
+area_futuro <- futuro_cat |>
+  st_drop_geometry() |>
+  group_by(categoria) |>
+  summarise(area_km2 = sum(area_km2)) |>
+  mutate(escenario = "Futuro")
+
+comparacion_area <- bind_rows(area_presente, area_futuro) |>
+  mutate(escenario = factor(escenario, levels = c("Presente", "Futuro")))
+```
+
+### Visualizar
+
+```{r}
+#| include: TRUE
+#| echo: TRUE
+# Visualizar
+ggplot(comparacion_area, aes(x = categoria, y = area_km2, fill = escenario)) +
+  geom_col(position = "dodge") +
+  theme_minimal() +
+  labs(x = "Categoría de hábitat",
+       y = "Área (km²)",
+       fill = "Escenario") +
+  scale_fill_tableau()
+```
+
+### Flujo de cambio entre categorías
+
+```{r}
+#| label: comparacion-categorias
+comparacion_categorias <- presente_cat |>
+  st_drop_geometry() |>
+  select(h3_address, cat_presente = categoria) |>
+  left_join(
+    futuro_cat |>
+      st_drop_geometry() |>
+      select(h3_address, cat_futuro = categoria),
+    by = "h3_address"
+  ) |>
+  filter(!is.na(cat_presente), !is.na(cat_futuro))
+```
+
+
+```{r}
+library(plotly)
+
+flujos_plot <- comparacion_categorias |>
+  count(cat_presente, cat_futuro, name = "value")
+
+niveles <- c("Muy alto", "Alto", "Medio", "Bajo", "Muy bajo")
+colores_nodos <- c("#1a9641", "#a6d96a", "#ffffbf", "#fdae61", "#d7191c")
+
+# Nodos: presente + futuro
+nodos_labels <- c(
+  paste0("Presente: ", niveles),
+  paste0("Futuro: ",   niveles)
+)
+nodos_colores <- rep(colores_nodos, 2)
+
+# Índices
+source_idx <- match(paste0("Presente: ", flujos_plot$cat_presente), nodos_labels) - 1
+target_idx <- match(paste0("Futuro: ",   flujos_plot$cat_futuro),   nodos_labels) - 1
+
+sankey_plotly <- plot_ly(
+  type = "sankey",
+  orientation = "h",
+  node = list(
+    label = nodos_labels,
+    color = nodos_colores,
+    pad   = 15,
+    thickness = 20
+  ),
+  link = list(
+    source = source_idx,
+    target = target_idx,
+    value  = flujos_plot$value
+  )
+) |>
+  layout(
+    title = list(text = paste0(params$species, 
+                               "<br><sup>Cambio en categorías de idoneidad de hábitat</sup>")),
+    font  = list(size = 12)
+  )
+
+sankey_plotly
+```
+
+## 10. Cobertura en áreas protegidas
+
+```{r}
+#| label: cargar-sinac
+h3_sinac <- readRDS(here("vectores_para_modelos/h8_sinac.rds"))
+umbral <- 0.5
+```
+
+
+```{r}
+#| label: cobertura-asp-presente
+
+cobertura_presente <- pred_presente_especie |>
+  st_drop_geometry() |>
+  mutate(presente = prediction >= umbral) |>
+  left_join(h3_sinac, by = "h3_address") |>
+  summarise(
+    celdas_distribucion  = sum(presente),
+    celdas_protegidas    = sum(presente & protegido, na.rm = TRUE),
+    pct_protegido        = round(celdas_protegidas / celdas_distribucion * 100, 1)
+  ) |>
+  mutate(escenario = "Presente")
+```
+
+```{r}
+cobertura_presente
+```
+
+
+```{r}
+#| label: cobertura-asp-futuro
+
+cobertura_futuro <- pred_futuro_especie |>
+  st_drop_geometry() |>
+  mutate(presente = prediction >= umbral) |>
+  left_join(h3_sinac, by = "h3_address") |>
+  summarise(
+    celdas_distribucion  = sum(presente),
+    celdas_protegidas    = sum(presente & protegido, na.rm = TRUE),
+    pct_protegido        = round(celdas_protegidas / celdas_distribucion * 100, 1)
+  ) |>
+  mutate(escenario = "Futuro")
+```
+
+
+```{r}
+#| label: tabla-cobertura-asp
+
+bind_rows(cobertura_presente, cobertura_futuro) |>
+  select(escenario, everything()) |>
+  rename(
+    `Escenario`              = escenario,
+    `Celdas en distribución` = celdas_distribucion,
+    `Celdas protegidas`      = celdas_protegidas,
+    `% protegido`            = pct_protegido
+  ) |>
+  tt(caption = "Cobertura de la distribución en áreas protegidas")
+```
+
+
+```{r}
+#| label: asp-por-categoria
+
+# Desglose por categoría — presente y futuro
+bind_rows(
+  pred_presente_especie |>
+    st_drop_geometry() |>
+    mutate(presente = prediction >= umbral) |>
+    filter(presente) |>
+    left_join(h3_sinac, by = "h3_address") |>
+    filter(protegido) |>
+    count(cat_manejo, siglas_cat) |>
+    mutate(escenario = "Presente"),
+  
+  pred_futuro_especie |>
+    st_drop_geometry() |>
+    mutate(presente = prediction >= umbral) |>
+    filter(presente) |>
+    left_join(h3_sinac, by = "h3_address") |>
+    filter(protegido) |>
+    count(cat_manejo, siglas_cat) |>
+    mutate(escenario = "Futuro")
+) |>
+  arrange(escenario, desc(n)) |>
+  rename(
+    `Categoría`  = cat_manejo,
+    `Siglas`     = siglas_cat,
+    `Celdas`     = n,
+    `Escenario`  = escenario
+  ) |>
+  tt(caption = "Cobertura por categoría de manejo — presente y futuro")
+```
+
+
+# Outputs
+
+```{r}
+#| label: outputs
+# Guardar outputs
+ruta <- here("modelos", tax_especie$order, tax_especie$family,
+             gsub(" ", "_", params$species))
+dir.create(ruta, recursive = TRUE, showWarnings = FALSE)
+
+# Registros de la especie
+saveRDS(presencias_centroides, file.path(ruta, "presencias.rds"))
+
+saveRDS(mod_gam_especie,            file.path(ruta, "model.rds"))
+saveRDS(pred_presente_especie,      file.path(ruta, "pred_presente.rds"))
+saveRDS(pred_futuro_especie,        file.path(ruta, "pred_futuro.rds"))
+saveRDS(evaluation_metrics_especie, file.path(ruta, "metrics.rds"))
+saveRDS(comparacion_sf,             file.path(ruta, "comparacion_sf.rds"))
+saveRDS(comparacion_area,           file.path(ruta, "comparacion_area.rds"))
+
+saveRDS(sankey_plotly, file.path(ruta, "sankey.rds"))
+```
+
+
+

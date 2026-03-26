@@ -1,0 +1,138 @@
+project:
+  type: website
+  render:
+    - "*.qmd"
+    - "!scripts/reporte_template_claude.qmd"
+
+website:
+  title: "Impacto del Cambio Climático en Anfibios en Costa Rica"
+  site-url: https://anfibios-climate-change.netlify.app
+  navbar:
+    left:
+      - text: "Inicio"
+        href: index.qmd
+      - text: "Sobre los autores"
+        href: about.qmd
+
+  sidebar:
+      style: "docked"
+      search: true
+      background: light
+      contents:
+      - section: "Anura"
+        contents:
+          - section: "Aromobatidae"
+            contents:
+              - text: "Allobates talamancae"
+                href: reportes/Allobates_talamancae.html
+          - section: "Bufonidae"
+            contents:
+              - text: "Atelopus varius"
+                href: reportes/Atelopus_varius.html
+              - text: "Incilius aucoinae"
+                href: reportes/Incilius_aucoinae.html
+              - text: "Incilius coccifer"
+                href: reportes/Incilius_coccifer.html
+              - text: "Incilius coniferus"
+                href: reportes/Incilius coniferus.html
+              - text: "Incilius luetkenii"
+                href: reportes/Incilius_luetkenii.html
+              - text: "Incilius melanochlorus"
+                href: reportes/Incilius_melanochlorus.html
+              - text: "Incilius valliceps"
+                href: reportes/Incilius_valliceps.html
+              - text: "Rhaebo haematiticus"
+                href: reportes/Rhaebo_haematiticus.html
+              - text: "Rhinella horribilis"
+                href: reportes/Rhinella_horribilis.html
+              - text: "Rhinella marina"
+                href: reportes/Rhinella_marina.html
+          - section: "Centrolenidae"
+            contents:
+              - text: "Cochranella granulosa"
+                href: reportes/Cochranella_granulosa.html
+              - text: "Espadarana prosoblepon"
+                href: reportes/Espadarana_prosoblepon.html
+              - text: "Hyalinobatrachium colymbiphyllum"
+                href: reportes/Hyalinobatrachium_colymbiphyllum.html
+              - text: "Hyalinobatrachium fleischmanni"
+                href: reportes/Hyalinobatrachium_fleischmanni.html
+              - text: "Hyalinobatrachium valerioi"
+                href: reportes/Hyalinobatrachium_valerioi.html
+              - text: "Sachatamia albomaculata"
+                href: reportes/Sachatamia_albomaculata.html
+              - text: "Sachatamia ilex"
+                href: reportes/Sachatamia_ilex.html
+              - text: "Teratohyla pulverata"
+                href: reportes/Teratohyla_pulverata.html
+              - text: "Teratohyla spinosa"
+                href: reportes/Teratohyla_spinosa.html
+          - section: "Craugastoridae"
+            contents:
+              - text: "Craugastor angelicus"
+                href: reportes/Craugastor_angelicus.html
+              - text: "Craugastor bransfordii"
+                href: reportes/Craugastor_bransfordii.html
+              - text: "Craugastor crassidigitus"
+                href: reportes/Craugastor_crassidigitus.html
+              - text: "Craugastor escoces"
+                href: reportes/Craugastor_escoces.html
+              - text: "Craugastor fitzingeri"
+                href: reportes/Craugastor_fitzingeri.html
+              - text: "Craugastor fleischmanni"
+                href: reportes/Craugastor_fleischmanni.html
+              - text: "Craugastor gollmeri"
+                href: reportes/Craugastor_gollmeri.html
+              - text: "Craugastor megacephalus"
+                href: reportes/Craugastor_megacephalus.html
+              - text: "Craugastor melanostictus"
+                href: reportes/Craugastor_melanostictus.html
+              - text: "Craugastor mimus"
+                href: reportes/Craugastor_mimus.html
+              - text: "Craugastor noblei"
+                href: reportes/Craugastor_noblei.html
+              - text: "Craugastor podiciferus"
+                href: reportes/Craugastor_podiciferus.html
+              - text: "Craugastor polyptychus"
+                href: reportes/Craugastor_polyptychus.html
+              - text: "Craugastor rugosus"
+                href: reportes/Craugastor_rugosus.html
+              - text: "Craugastor rugulosus"
+                href: reportes/Craugastor_rugulosus.html
+              - text: "Craugastor stejnegerianus"
+                href: reportes/Craugastor_stejnegerianus.html
+              - text: "Craugastor talamancae"
+                href: reportes/Craugastor_talamancae.html
+              - text: "Craugastor taurus"
+                href: reportes/Craugastor_taurus.html
+              - text: "Craugastor underwoodi"
+                href: reportes/Craugastor_underwoodi.html
+              - text: "Pristimantis caryophyllaceus"
+                href: reportes/Pristimantis_caryophyllaceus.html
+              - text: "Pristimantis cerasinus"
+                href: reportes/Pristimantis_cerasinus.html
+              - text: "Pristimantis cruentus"
+                href: reportes/Pristimantis_cruentus.html
+              - text: "Pristimantis ridens"
+                href: reportes/Pristimantis_ridens.html
+      - section: "Caudata"
+        contents: []
+      - section: "Gymnophiona"
+        contents: []
+
+
+
+format:
+  html:
+    theme:
+      - cosmos
+      - anfibios_theme.scss
+    toc: true
+    grid:
+      sidebar-width: 300px
+      body-width: 900px
+      margin-width: 300px
+      gutter-width: 1.5rem
+
+editor: visual
+

@@ -1,0 +1,116 @@
+---
+title: "Renderizar reportes por familia"
+format: html
+execute:
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(sf)
+library(here)
+library(quarto)
+```
+
+
+## Seleccionar familia
+
+Cambiar aquí el orden y la familia que quieres renderizar:
+
+```{r}
+#| label: seleccion
+
+orden_actual   <- "Anura"
+familia_actual <- "Craugastoridae"
+```
+
+------------------------------------------------------------------------
+
+## Especies disponibles en esta familia
+
+```{r}
+#| label: especies
+
+taxonomia <- readRDS(here("datos/taxonomia.rds"))
+
+especies <- taxonomia |>
+  filter(order == orden_actual, family == familia_actual) |>
+  pull(species)
+especies
+```
+
+------------------------------------------------------------------------
+
+## Verificar que existen los archivos del modelo
+
+Antes de renderizar, verifica que cada especie tiene sus `.rds` guardados:
+
+```{r}
+#| label: verificar
+
+archivos_necesarios <- c("model.rds", "pred_presente.rds", "pred_futuro.rds",
+                         "metrics.rds", "presencias.rds", 
+                         "comparacion_sf.rds", "comparacion_area.rds",
+                         "sankey.rds")
+
+verificacion <- map_dfr(especies, function(sp) {
+  ruta <- here("modelos", orden_actual, familia_actual, gsub(" ", "_", sp))
+  
+  tibble(
+    especie   = sp,
+    completo  = all(file.exists(file.path(ruta, archivos_necesarios))),
+    faltantes = paste(
+      archivos_necesarios[!file.exists(file.path(ruta, archivos_necesarios))],
+      collapse = ", "
+    )
+  )
+})
+
+verificacion
+```
+
+------------------------------------------------------------------------
+
+## Renderizar reportes
+
+Solo corre este chunk cuando las especies que quieres estén completas. Las especies sin archivos se saltan automáticamente:
+
+```{r}
+#| label: renderizar
+especies_completas <- verificacion |>
+  filter(completo == TRUE) |>
+  pull(especie)
+
+message("Especies a renderizar: ", length(especies_completas), " de ", length(especies))
+
+ruta_template <- here("scripts", "reporte_template_claude.qmd")
+
+walk(especies_completas, function(sp) {
+  
+  tax       <- taxonomia |> filter(species == sp)
+  subtitulo <- paste(tax$order, "›", tax$family)
+  
+  message("⏳ Renderizando: ", sp)
+  
+  quarto_render(
+    input          = ruta_template,
+    output_file    = paste0(gsub(" ", "_", sp), ".html"),
+    execute_params = list(
+      species  = sp,
+      subtitle = subtitulo
+    )
+  )
+  
+  nombre_html <- paste0(gsub(" ", "_", sp), ".html")
+  file.rename(
+    from = here("scripts", nombre_html),
+    to   = here("reportes", nombre_html)
+  )
+  
+  message("✓ Listo: ", sp)
+})
+```

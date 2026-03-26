@@ -1,0 +1,115 @@
+---
+title: "Untitled"
+---
+
+```{r}
+library(tidyverse)
+library(sf)
+library(rgbif)
+library(spocc)
+library(crgeo)
+library(paisaje)
+```
+
+Al final terminé bajando todos los registros de anfibios desde GBIF como un csv
+
+# taxonkey para anfibios
+
+```{r}
+# Amphibia, GBIF taxon ID: 131
+gbif_taxonkey_amphibia = 131
+```
+
+```{r}
+# Anura, GBIF taxon ID : 952
+gbif_taxonkey_anura = 952
+```
+
+```{r}
+# Caudata, GBIF taxon ID : 953
+gbif_taxonkey_caudata = 953
+```
+
+# Búsquedas exploratorias
+
+```{r}
+search <- occ_search(taxonKey = gbif_taxonkey_amphibia, country = "CR")
+```
+
+```{r}
+search
+```
+
+```{r}
+occ_count(taxonKey = gbif_taxonkey_amphibia, country = "CR")
+```
+
+# Búsqueda definitiva (no exploratoria) en rgbif para una especie
+
+-   El siguiente script es para bajar los datos mediante rgbif
+
+-   Se debe usar occ_download para investigaciones serias, occ_search y occ_data es para explorar nada más.
+
+```{r}
+cr <- cr_outline_c
+```
+
+```{r}
+box <- st_bbox(cr)
+box
+```
+
+```{r}
+taxonkey <- name_backbone("Agalychnis callidryas")$usageKey
+```
+
+```{r}
+#| eval: false
+gbif_download <- occ_download(
+  pred("taxonKey", taxonkey),
+  pred("hasCoordinate", TRUE), 
+  pred("hasGeospatialIssue", FALSE), # remove GBIF default geospatial issues
+  format = "SIMPLE_CSV",
+  user = "manuel_spinola",
+  pwd = "lobito101",
+  email = "mspinola10@gmail.com") 
+```
+
+```{r}
+#| eval: false
+gbif_download
+```
+
+```{r}
+#| eval: false
+d <- occ_download_get('0174251-230224095556074') %>%
+    occ_download_import()
+```
+
+# Búsqueda definitiva (no exploratoria) en rgbif para muchas especies o clases como anfibios
+
+-   El siguiente script es para bajar los datos mediante rgbif
+
+-   Se debe usar occ_download para investigaciones serias, occ_search y occ_data es para explorar nada más.
+
+```{r}
+#| eval: false
+d <- occ_download(pred_in("taxonKey", 131),
+             pred("hasCoordinate", TRUE),
+             pred("hasGeospatialIssue", FALSE), # remove GBIF default geospatial issues
+             format = "SIMPLE_CSV",
+             user = "manuel_spinola",
+             pwd = "lobito101",
+             email = "mspinola10@gmail.com")
+```
+
+```{r}
+#| eval: false
+d
+```
+
+```{r}
+#| eval: false
+gbif_amphibia <- occ_download_get('0109496-230224095556074', overwrite = TRUE) %>%
+    occ_download_import()
+```

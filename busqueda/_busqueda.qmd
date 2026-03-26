@@ -1,0 +1,131 @@
+---
+title: "Búsqueda bibliográfica"
+author: 
+  - Manuel Spínola
+  - Natalie Sánchez
+  
+format:
+  html:
+    embed-resources: true
+    code-overflow: wrap
+
+date: "2024-09-11"
+toc: true
+toc-title: Tabla de contenido
+toc-location: left
+toc-depth: 4
+execute: 
+  echo: false
+  include: false
+citation: true
+lang: es
+---
+
+```{r}
+#| message: false
+#| warning: false
+#| include: true
+#| echo: true
+library(tidyverse)
+library(datawizard)
+library(here)
+library(bibliometrix)
+library(dimensionsR)
+library(pubmedR)
+library(openalexR)
+library(easyPubMed)
+library(rentrez)
+library(wosr)
+library(curl)
+```
+
+Web of Science
+
+```{r}
+#| eval: false
+auth("Manuel Spínola", password = "Lobito@1010")
+```
+
+# Búsqueda de Natalie en Google Scholar
+
+anuran\* AND climate change AND scenario\* AND range shift\* AND tropics\*
+
+De los años 2010 al 2024
+
+# Con pubmedR
+
+```{r}
+#| include: true
+#| echo: true
+query_01 <- "amphibian*[All fields] AND climate change[All fields] AND range shift[All fields] AND tropics[All fields] AND Journal Article[PT] AND 2010:2024[DP]"
+```
+
+```{r}
+#| include: true
+#| echo: true
+query_02 <- "amphibian climate change tropics[All fields] AND Journal Article[PT] AND 2010:2024[DP]"
+```
+
+```{r}
+#| include: true
+#| echo: true
+query_03 <- "amphibians climate change[All fields]"
+```
+
+```{r}
+#| include: true
+#| echo: true
+res <- pmQueryTotalCount(query = query_02, api_key = NULL)
+```
+
+```{r}
+#| include: true
+#| echo: true
+res$total_count
+```
+
+```{r}
+#| include: true
+#| echo: true
+d <- pmApiRequest(query = query_02, limit = res$total_count, api_key = NULL)
+```
+
+# Con easyPubMed
+
+```{r}
+#| include: true
+#| echo: true
+my_entrez_id <- get_pubmed_ids(query_02)
+```
+
+```{r}
+#| include: true
+#| echo: true
+my_entrez_id$Count
+```
+
+# Con entrez
+
+```{r}
+#| include: true
+#| echo: true
+entrez_db_searchable("pubmed")
+```
+
+```{r}
+#| include: true
+#| echo: true
+a_search <- entrez_search(db = "pubmed", term = query_02)
+```
+
+```{r}
+#| include: true
+#| echo: true
+a_search
+```
+
+```{r}
+#| include: true
+#| echo: true
+a_search$QueryTranslation
+```

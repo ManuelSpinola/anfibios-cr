@@ -1,0 +1,422 @@
+---
+title: "Untitled"
+---
+
+```{r}
+#| message: false
+#| warning: false
+#| include: true
+library(tidyverse)
+library(easystats)
+library(here)
+library(sf)
+library(terra)
+library(tidysdm)
+library(h3sdm)
+library(tinytable)
+library(mgcv)
+library(MuMIn)
+```
+
+```{r}
+todas <- readRDS(here("vectores_para_modelos/datos_h8_pa_long.rds"))
+```
+
+```{r}
+glimpse(todas)
+```
+
+```{r}
+todas %>%
+  st_drop_geometry() %>%
+  filter(presence == 1) %>%
+  group_by(order, family, species) %>%
+  summarise(n_hexagonos = n_distinct(h3_address)) %>%
+  arrange(desc(n_hexagonos))
+```
+
+```{r}
+todas |>
+  st_drop_geometry() |>
+  distinct(order, family, species) |>
+  count(order, family) |>
+  arrange(order, family)
+```
+
+```{r}
+todas |>
+  st_drop_geometry() |>
+  filter(family == "Aromobatidae") |>
+  distinct(species) |>
+  arrange(species)
+```
+
+```{r}
+todas |>
+  st_drop_geometry() |>
+  filter(family == "Aromobatidae", presence == 1) |>
+  count(species) |>
+  arrange(species)
+```
+
+```{r}
+especie <- todas |>
+  filter(species == "Craugastor underwoodi") |>
+  mutate_if(is.character, as.factor) |>
+  mutate(presence = factor(presence)) |>
+  select(h3_address, presence, geometry)
+```
+
+```{r}
+summary(especie)
+```
+
+```{r}
+#| include: true
+set.seed(567)
+
+# Número de presencias
+n_pres <- sum(especie$presence == 1)
+
+# Extraer presencias
+presences_especie <- especie |>
+  filter(presence == 1)
+
+# Muestrear background (3x)
+background_especie <- especie |>
+  filter(presence == 0) |>
+  slice_sample(n = n_pres * 1)
+
+# Dataset final
+especie_balanced_data <- bind_rows(
+  presences_especie,
+  background_especie
+)
+```
+
+```{r}
+predictors <- readRDS(here("vectores_para_modelos/predictores_presente_finales_h8_sf.rds"))
+```
+
+```{r}
+head(predictors)
+```
+
+```{r}
+#| include: true
+dat_especie <- h3sdm_data(especie_balanced_data, predictors)
+```
+
+```{r}
+dat_especie
+```
+
+# Mapa de prsencia y pseudoausencias
+
+```{r}
+#| include: true
+#| echo: true
+ggplot() +
+  geom_sf(data = cr) +
+  geom_sf(data = especie_balanced_data, aes(fill = presence))
+```
+
+# Validación cruzada espacial
+
+```{r}
+#| include: true
+scv_especie <- h3sdm_spatial_cv(
+  dat_especie,
+  v = 3,
+  cellsize = 30000,
+  square = FALSE
+)
+```
+
+```{r}
+#| eval: false
+splits <- scv_especie$splits
+```
+
+```{r}
+#| eval: false
+map_dfr(
+  splits,
+  ~ analysis(.x) %>%
+      count(presence),
+  .id = "fold"
+) |>
+  tt()
+```
+
+# Mapa de los folds
+
+```{r}
+#| include: true
+autoplot(scv_especie)
+```
+
+# Crear la receta
+
+```{r}
+#| include: true
+gam_rec_especie <- h3sdm_recipe_gam(dat_especie) |>
+  step_normalize(starts_with("class_prop_"), 
+                 starts_with("BIO"), 
+                 starts_with("lsm_"))
+```
+
+```{r}
+#| include: true
+gam_rec_especie
+```
+
+# Definir el modelo
+
+```{r}
+#| include: true
+# Definir el modelo GAM
+gam_model <- parsnip::gen_additive_mod(
+  mode = "classification"
+) %>%
+  set_engine("mgcv", 
+             family = binomial(link = "logit"),
+             method = "REML")
+```
+
+# Definir la fórmula para el modelo gam
+
+```{r}
+#| include: true
+dat_especie_df <- st_drop_geometry(dat_especie)
+```
+
+```{r}
+#| include: true
+# Excluir no-predictores
+predictores <- dat_especie_df %>%
+  select(-any_of(c("h3_address", "presence", "geometry", "x", "y"))) %>%
+  colnames()
+```
+
+```{r}
+#| include: true
+rec_prep_especie <- prep(gam_rec_especie)
+dat_especie_scaled <- bake(rec_prep_especie, new_data = dat_especie_df)
+```
+
+```{r}
+#| include: true
+# Construir términos s() para predictores ambientales
+terminos <- paste0('s(', predictores, ', bs="ts")', collapse = " + ")
+```
+
+```{r}
+#| include: true
+# Agregar s(x, y) para el componente espacial
+formula_gam <- as.formula(paste('presence ~', terminos, '+ s(x, y, bs="tp")'))
+```
+
+```{r}
+# Verificar
+formula_gam
+```
+
+```{r}
+#| include: true
+gam_full_jaguar <- gam(formula_gam, 
+                data = dat_especie_scaled,
+                family = binomial,
+                method = "REML",
+                select = TRUE,
+                na.action = na.fail)
+```
+
+```{r}
+summary(gam_full_jaguar)
+```
+
+```{r}
+seleccionar_variables <- function(dat_especie, formula_gam, p_umbral = 0.05) {
+  
+  gam_inicial <- mgcv::gam(
+    formula_gam,
+    data = dat_especie,
+    family = binomial(link = "logit"),
+    method = "REML",
+    select = TRUE,
+    na.action = na.fail
+  )
+  
+  s_table <- summary(gam_inicial)$s.table
+  p_valores <- s_table[, "p-value"]
+  nombres <- rownames(s_table)
+  
+  nombres_filtrar <- nombres[!grepl("x,y", nombres)]
+  p_filtrar <- p_valores[!grepl("x,y", nombres)]
+  
+  vars_sig <- nombres_filtrar[p_filtrar < p_umbral]
+  vars_sig <- gsub("s\\(|\\).*", "", vars_sig)
+  
+  # Depurar
+  print(vars_sig)
+  print(length(vars_sig))
+  
+  if (length(vars_sig) == 0) {
+    formula_reducida <- as.formula("presence ~ s(x, y, bs='tp')")
+  } else {
+    terminos <- paste0('s(', vars_sig, ', bs="ts")', collapse = " + ")
+    print(terminos)  # ver qué se construye
+    formula_reducida <- as.formula(paste('presence ~', terminos, '+ s(x, y, bs="tp")'))
+  }
+  
+  return(list(
+    variables = vars_sig,
+    formula = formula_reducida
+  ))
+}
+```
+
+```{r}
+resultado <- seleccionar_variables(dat_especie_scaled, formula_gam)
+```
+
+```{r}
+resultado$variables
+```
+
+```{r}
+resultado$formula
+```
+
+```{r}
+# GAM reducido con variables significativas
+gam_reduced_especie <- gam(resultado$formula, 
+                data = dat_especie_scaled,
+                family = binomial,
+                method = "ML",
+                select = TRUE,
+                na.action = na.fail)
+
+# Dredge
+options(na.action = "na.fail")
+dredge_result_especie <- dredge(gam_reduced_especie)
+dredge_result_especie
+
+# Mejor modelo
+best_model_especie <- get.models(dredge_result_especie, subset = 1)[[1]]
+summary(best_model_especie)
+
+# Fórmula final
+formula_gam_final_especie <- formula(best_model_especie)
+formula_gam_final_especie
+```
+
+```{r}
+formula_gam_final_especie
+```
+
+```{r}
+# Workflow
+wf_especie <- h3sdm_workflow_gam(gam_model, gam_rec_especie, formula_gam_final_especie)
+```
+
+```{r}
+# Solo presencias
+presence_data_especie <- dat_especie_scaled |> 
+  filter(presence == 1)
+```
+
+```{r}
+# Ajustar modelo
+mod_gam_especie <- h3sdm_fit_model(wf_especie, scv_especie, presence_data_especie)
+```
+
+```{r}
+#| include: true
+modelo_ajustado_especie <- workflows::extract_fit_engine(mod_gam_especie$final_model)
+summary(modelo_ajustado_especie)
+```
+
+```{r}
+extraer_resumen_modelo <- function(modelo_ajustado, p_umbral = 0.05) {
+  
+  s <- summary(modelo_ajustado)
+  
+  # Tabla de términos suavizados
+  tabla_smooth <- s$s.table |> 
+    as.data.frame() |> 
+    rownames_to_column("Término") |> 
+    mutate(
+      edf = round(edf, 3),
+      `Ref.df` = round(`Ref.df`, 3),
+      `Chi.sq` = round(`Chi.sq`, 3),
+      `p-value` = round(`p-value`, 4),
+      significativo = `p-value` < p_umbral
+    )
+  
+  # Métricas generales
+  metricas <- tibble(
+    `R² ajustado` = round(s$r.sq, 3),
+    `Devianza explicada (%)` = round(s$dev.expl * 100, 1),
+    `n` = s$n,
+    `REML` = round(s$sp.criterion, 3)
+  )
+  
+  return(list(
+    smooth = tabla_smooth,
+    metricas = metricas
+  ))
+}
+
+resumen <- extraer_resumen_modelo(modelo_ajustado_especie)
+
+# Tabla con filas resaltadas para términos significativos
+filas_sig <- which(resumen$smooth$significativo)
+
+resumen$smooth |> 
+  select(-significativo) |> 
+  tt(caption = "Términos suavizados del modelo GAM") |> 
+  style_tt(i = filas_sig, background = "#e8f4e8", bold = TRUE)
+```
+
+```{r}
+# Métricas
+tt(resumen$metricas, caption = "Métricas del modelo")
+```
+
+# Obtener métricas del modelo
+
+```{r}
+#| include: true
+evaluation_metrics_especie <- h3sdm_eval_metrics(
+  fitted_model  = mod_gam_especie$cv_model,
+  presence_data = presence_data_especie
+)
+```
+
+```{r}
+tt(evaluation_metrics_especie, digits = 2)
+```
+
+```{r}
+saveRDS(evaluation_metrics_especie, here( "tablas/evaluation_metrics_especie.rds"))
+```
+
+# Realizar las predicciones del modelo
+
+```{r}
+#| include: true
+pred_presente_especie <- h3sdm_predict(mod_gam_especie, predictors)
+```
+
+# Elaborar el mapa para la distribución potencial presente
+
+```{r}
+#| include: true
+#| echo: true
+ggplot() +
+  theme_minimal() +
+  geom_sf(data = pred_presente_especie, aes(fill = prediction), color = "transparent") +
+  scale_fill_viridis_c(name = "Idoneidad \nde habitat",option = "B", direction = -1)
+```

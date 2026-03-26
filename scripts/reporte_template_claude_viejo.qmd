@@ -1,0 +1,453 @@
+---
+title: "`r params$species`"
+subtitle: "`r params$subtitle`"
+params:
+  species: "Allobates talamancae"
+  subtitle: ""
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    theme: cosmo
+    embed-resources: true
+execute:
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(sf)
+library(here)
+library(tinytable)
+library(mapview)
+library(htmltools)
+library(rinat)
+library(patchwork)
+library(glue)
+
+taxonomia   <- readRDS(here("datos/taxonomia.rds"))
+tax_especie <- taxonomia |> filter(species == params$species)
+```
+
+
+
+```{r}
+#| label: rutas-y-datos
+#| include: false
+
+taxonomia   <- readRDS(here("datos/taxonomia.rds"))
+tax_especie <- taxonomia |> filter(species == params$species)
+
+# Ruta de outputs del modelo
+ruta <- here("modelos", tax_especie$order, tax_especie$family,
+             gsub(" ", "_", params$species))
+
+# Resultados del modelo
+pred_presente_especie      <- readRDS(file.path(ruta, "pred_presente.rds"))
+pred_futuro_especie        <- readRDS(file.path(ruta, "pred_futuro.rds"))
+evaluation_metrics_especie <- readRDS(file.path(ruta, "metrics.rds"))
+comparacion_sf             <- readRDS(file.path(ruta, "comparacion_sf.rds"))
+comparacion_area           <- readRDS(file.path(ruta, "comparacion_area.rds"))
+sankey_plot                <- readRDS(file.path(ruta, "sankey.rds"))
+
+# Datos generales
+cr <- readRDS(here("vectores_para_modelos/cr.rds"))
+
+# Presencias guardadas desde modelaje.qmd
+presencias_especie <- readRDS(file.path(ruta, "presencias.rds"))
+n_registros        <- nrow(presencias_especie)
+```
+
+```{r}
+#| label: foto-inat
+#| include: false
+
+library(rinat)
+
+obtener_foto_inat <- function(species) {
+  tryCatch({
+    obs <- get_inat_obs(
+      taxon_name = species,
+      quality    = "research",
+      maxresults = 50
+    ) |>
+      filter(
+        !is.na(image_url),
+        captive_cultivated == "false",
+        !grepl("\\.gif$", image_url)
+      ) |>
+      arrange(desc(num_identification_agreements)) |>
+      slice(1)
+    
+    if (nrow(obs) == 0) return(NULL)
+    
+    list(
+      url    = obs$image_url[1],
+      autor  = obs$user_login[1],
+      fuente = "iNaturalist"
+    )
+  }, error = function(e) NULL)
+}
+
+foto <- obtener_foto_inat(params$species)
+
+tiene_foto  <- !is.null(foto)
+foto_url    <- if (tiene_foto) foto$url    else NULL
+foto_autor  <- if (tiene_foto) foto$autor  else NULL
+foto_fuente <- if (tiene_foto) foto$fuente else NULL
+```
+
+------------------------------------------------------------------------
+
+## Ficha de la especie / Species profile
+
+```{r}
+#| label: ficha
+#| echo: false
+#| results: asis
+
+# Ficha con foto y datos básicos lado a lado
+if (tiene_foto) {
+  cat(paste0(
+    '<div style="display:flex; gap:2rem; align-items:flex-start; margin-bottom:1.5rem;">',
+      '<img src="', foto_url, '" ',
+           'style="width:280px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.2);">',
+      '<div>',
+        '<p><strong>Especie / Species:</strong> <em>', params$species, '</em></p>',
+        '<p><strong>Familia / Family:</strong> ', params$family, '</p>',
+        '<p><strong>Orden / Order:</strong> ', params$order, '</p>',
+        '<p><strong>Registros / Records:</strong> ', n_registros, ' hexágonos</p>',
+        '<p style="font-size:0.85rem; color:grey;">📷 © ', foto_autor, ' — iNaturalist</p>',
+      '</div>',
+    '</div>'
+  ))
+} else {
+  cat(paste0(
+    '<div style="margin-bottom:1.5rem;">',
+      '<p><strong>Especie / Species:</strong> <em>', params$species, '</em></p>',
+      '<p><strong>Familia / Family:</strong> ', params$family, '</p>',
+      '<p><strong>Orden / Order:</strong> ', params$order, '</p>',
+      '<p><strong>Registros / Records:</strong> ', n_registros, ' hexágonos</p>',
+    '</div>'
+  ))
+}
+```
+
+------------------------------------------------------------------------
+
+## 1. Registros / Occurrence records
+
+*Distribución de registros de presencia confirmada en Costa Rica.*\
+*Distribution of confirmed presence records in Costa Rica.*
+
+```{r}
+#| label: mapa-registros
+#| echo: false
+
+mapview(cr,
+        alpha.regions = 0,
+        color         = "grey40",
+        layer.name    = "Costa Rica",
+        map.types     = "OpenStreetMap") +
+mapview(presencias_especie,
+        cex           = 4,
+        col.regions   = "#2166ac",
+        alpha.regions = 0.7,
+        layer.name    = "Registros / Records")
+```
+
+------------------------------------------------------------------------
+
+## 2. Distribución potencial / Potential distribution
+
+*Idoneidad de hábitat bajo condiciones climáticas actuales y futuras.*\
+*Habitat suitability under current and future climatic conditions.*
+
+```{r}
+#| label: mapas-presente-futuro
+#| echo: false
+#| fig-cap: "Distribución potencial presente y futura / Present and future potential distribution"
+#| fig-width: 10
+#| fig-height: 5
+
+mapa_presente <- ggplot() +
+  theme_minimal() +
+  geom_sf(data = pred_presente_especie, aes(fill = prediction), color = "transparent") +
+  geom_sf(data = cr, fill = "transparent", color = "grey30", linewidth = 0.3) +
+  scale_fill_viridis_c(name = "Idoneidad de hábitat /\nHabitat suitability",
+                       option = "B", direction = -1, limits = c(0, 1)) +
+  labs(subtitle = "Presente / Present") +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+
+mapa_futuro <- ggplot() +
+  theme_minimal() +
+  geom_sf(data = pred_futuro_especie, aes(fill = prediction), color = "transparent") +
+  geom_sf(data = cr, fill = "transparent", color = "grey30", linewidth = 0.3) +
+  scale_fill_viridis_c(name = "Idoneidad de hábitat /\nHabitat suitability",
+                       option = "B", direction = -1, limits = c(0, 1)) +
+  labs(subtitle = "Futuro / Future") +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+
+mapa_presente + mapa_futuro +
+  plot_layout(guides = "collect") +
+  plot_annotation(title = params$species) &
+  theme(legend.position = "bottom")
+```
+
+
+------------------------------------------------------------------------
+
+## 3. Cambio presente → futuro / Present → future change
+
+*Diferencia en idoneidad de hábitat entre escenarios. Azul = ganancia, rojo = pérdida.*\
+*Difference in habitat suitability between scenarios. Blue = gain, red = loss.*
+
+```{r}
+#| label: mapa-cambio
+#| echo: false
+#| fig-cap: "Cambio en idoneidad / Change in suitability (futuro − presente)"
+
+lim <- max(abs(comparacion_sf$cambio), na.rm = TRUE)
+
+ggplot() +
+  theme_minimal() +
+  geom_sf(data = comparacion_sf, aes(fill = cambio), color = "transparent") +
+  geom_sf(data = cr, fill = "transparent", color = "grey30", linewidth = 0.3) +
+  scale_fill_distiller(
+    name      = "Cambio /\nChange",
+    palette   = "RdBu",
+    direction = 1,
+    limits    = c(-lim, lim)
+  ) +
+  labs(title    = params$species,
+       subtitle = "Diferencia futuro − presente / Future − present difference")
+```
+
+```{r}
+#| label: interpretacion-cambio
+#| echo: false
+#| results: asis
+
+comparacion <- comparacion_sf |> st_drop_geometry()
+cambio_medio <- mean(comparacion$cambio, na.rm = TRUE)
+n_ganancia   <- sum(comparacion$cambio >  0.1, na.rm = TRUE)
+n_perdida    <- sum(comparacion$cambio < -0.1, na.rm = TRUE)
+n_total      <- nrow(comparacion)
+pct_ganancia <- round(n_ganancia / n_total * 100, 1)
+pct_perdida  <- round(n_perdida  / n_total * 100, 1)
+
+direccion_es <- case_when(
+  cambio_medio >  0.05 ~ "un incremento neto en la idoneidad de hábitat",
+  cambio_medio < -0.05 ~ "una reducción neta en la idoneidad de hábitat",
+  TRUE                 ~ "sin cambio neto relevante en la idoneidad de hábitat"
+)
+
+direccion_en <- case_when(
+  cambio_medio >  0.05 ~ "a net increase in habitat suitability",
+  cambio_medio < -0.05 ~ "a net reduction in habitat suitability",
+  TRUE                 ~ "no relevant net change in habitat suitability"
+)
+
+cat(glue::glue(
+  "El modelo proyecta **{direccion_es}** para *{params$species}* bajo el escenario futuro.
+  El {pct_ganancia}% de los hexágonos muestra un incremento superior a 0.1 en idoneidad,
+  mientras que el {pct_perdida}% presenta una reducción equivalente. El cambio medio
+  es de {round(cambio_medio, 3)}, lo que sugiere una tendencia
+  {ifelse(cambio_medio > 0, 'favorable', 'desfavorable')} para la especie en Costa Rica.
+
+  *The model projects **{direccion_en}** for *{params$species}* under the future scenario.
+  {pct_ganancia}% of hexagons show an increase greater than 0.1 in suitability,
+  while {pct_perdida}% show an equivalent reduction. The mean change
+  is {round(cambio_medio, 3)}, suggesting a
+  {ifelse(cambio_medio > 0, 'favorable', 'unfavorable')} trend for the species in Costa Rica.*"
+))
+```
+
+
+------------------------------------------------------------------------
+
+## 4. Área por categoría de hábitat / Area by habitat category
+
+*Comparación del área (km²) por categoría de idoneidad entre escenarios.*\
+*Comparison of area (km²) by suitability category between scenarios.*
+
+```{r}
+#| label: grafico-barras
+#| echo: false
+#| fig-cap: "Área por categoría de hábitat / Area by habitat category"
+
+ggplot(comparacion_area, aes(x = categoria, y = area_km2, fill = escenario)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c("Presente" = "#2166ac", "Futuro" = "#d6604d")) +
+  theme_minimal(base_size = 13) +
+  labs(x     = "Categoría / Category",
+       y     = "Área (km²)",
+       fill  = "Escenario / Scenario",
+       title = params$species)
+```
+
+------------------------------------------------------------------------
+
+## 5. Flujo de cambio entre categorías / Flow between categories
+
+*Transición de hábitat entre escenario presente y futuro.*\
+*Habitat transition between present and future scenario.*
+
+```{r}
+#| label: sankey-plot
+#| echo: false
+
+sankey_plot |>
+  plotly::layout(
+    height = 450,
+    width  = 800,
+    margin = list(l = 20, r = 20, t = 40, b = 20)
+  )
+```
+
+------------------------------------------------------------------------
+
+## 6. Métricas de evaluación / Evaluation metrics
+
+*Desempeño del modelo estimado mediante validación cruzada espacial.*\
+*Model performance estimated via spatial cross-validation.*
+
+
+```{r}
+#| label: explicacion-metricas
+#| echo: false
+#| results: asis
+
+cat("
+**Área Bajo la Curva ROC (AUC-ROC):** mide la capacidad del modelo para discriminar
+entre presencias y ausencias. Valores cercanos a 1 indican excelente discriminación;
+valores cercanos a 0.5 indican desempeño equivalente al azar.
+
+**Índice de Boyce:** evalúa qué tan bien el modelo predice las áreas de presencia real
+en relación al ambiente disponible. Valores cercanos a 1 indican alta consistencia
+entre las predicciones y las presencias observadas.
+
+**Verdadera Habilidad Estadística (TSS):** combina sensibilidad y especificidad
+corrigiendo por azar. Valores superiores a 0.6 indican buen poder discriminativo.
+
+**Coeficiente Kappa de Cohen (κ):** mide la concordancia entre predicciones y datos
+observados corrigiendo por azar. Valores entre 0.4–0.6 indican concordancia moderada
+y superiores a 0.6 concordancia sustancial.
+
+**Precisión Global (Accuracy):** proporción de hexágonos correctamente clasificados
+como presencia o ausencia.
+
+---
+
+*__Area Under the ROC Curve (AUC-ROC):__ measures the model's ability to discriminate
+between presences and absences. Values close to 1 indicate excellent discrimination;
+values close to 0.5 indicate performance equivalent to random.*
+
+*__Boyce Index:__ evaluates how well the model predicts areas of actual presence
+relative to the available environment. Values close to 1 indicate high consistency
+between predictions and observed presences.*
+
+*__True Skill Statistic (TSS):__ combines sensitivity and specificity correcting for
+chance. Values above 0.6 indicate good discriminative power.*
+
+*__Cohen's Kappa Coefficient (κ):__ measures agreement between predictions and
+observed data correcting for chance. Values between 0.4–0.6 indicate moderate
+agreement and above 0.6 substantial agreement.*
+
+*__Overall Accuracy:__ proportion of hexagons correctly classified as presence
+or absence.*
+")
+```
+
+
+```{r}
+#| label: metricas
+#| echo: false
+
+evaluation_metrics_especie |>
+  mutate(.metric = recode(.metric,
+    "accuracy" = "Precisión global / Accuracy",
+    "f_meas"   = "Medida F / F-measure",
+    "kap"      = "Kappa de Cohen / Cohen's Kappa",
+    "roc_auc"  = "AUC-ROC",
+    "sens"     = "Sensibilidad / Sensitivity",
+    "spec"     = "Especificidad / Specificity",
+    "tss"      = "Verdadera Habilidad Estadística / TSS",
+    "boyce"    = "Índice de Boyce / Boyce Index"
+  )) |>
+  rename(
+    `Métrica / Metric`       = .metric,
+    `Estimador / Estimator`  = .estimator,
+    `Media / Mean`           = mean,
+    `Error std / Std error`  = std_err,
+    `IC inferior / Lower CI` = conf_low,
+    `IC superior / Upper CI` = conf_high
+  ) |>
+  tt(digits  = 2,
+     caption = "Métricas de evaluación — CV espacial / Evaluation metrics — Spatial CV") |>
+  style_tt(
+    i          = 0,
+    background = "#8B1A1A",
+    color      = "white",
+    bold       = TRUE
+  ) |>
+  style_tt(
+    i          = seq(1, nrow(evaluation_metrics_especie), by = 2),
+    background = "#FFF5F5"
+  ) |>
+  style_tt(
+    i          = seq(2, nrow(evaluation_metrics_especie), by = 2),
+    background = "#FDECEA"
+  )
+```
+
+
+
+```{r}
+#| label: interpretacion-metricas
+#| results: asis
+#| echo: false
+
+roc_auc <- evaluation_metrics_especie |> filter(.metric == "roc_auc") |> pull(mean)
+kap     <- evaluation_metrics_especie |> filter(.metric == "kap")     |> pull(mean)
+acc     <- evaluation_metrics_especie |> filter(.metric == "accuracy") |> pull(mean)
+tss     <- evaluation_metrics_especie |> filter(.metric == "tss")     |> pull(mean)
+boyce   <- evaluation_metrics_especie |> filter(.metric == "boyce")   |> pull(mean)
+
+calidad_auc_es <- case_when(
+  roc_auc >= 0.9 ~ "excelente",
+  roc_auc >= 0.8 ~ "bueno",
+  roc_auc >= 0.7 ~ "aceptable",
+  TRUE           ~ "bajo"
+)
+
+calidad_auc_en <- case_when(
+  roc_auc >= 0.9 ~ "excellent",
+  roc_auc >= 0.8 ~ "good",
+  roc_auc >= 0.7 ~ "acceptable",
+  TRUE           ~ "low"
+)
+
+cat(glue::glue(
+  "Para *{params$species}*, el modelo muestra un desempeño **{calidad_auc_es}** (AUC = {round(roc_auc, 3)}), con un índice de Boyce de {round(boyce, 3)} que confirma {ifelse(boyce > 0.7, 'una alta capacidad predictiva para las áreas de presencia', ifelse(boyce > 0.4, 'una capacidad predictiva moderada', 'una capacidad predictiva limitada'))}.
+  El TSS de {round(tss, 3)} indica {ifelse(tss >= 0.6, 'un buen poder discriminativo', ifelse(tss >= 0.4, 'un poder discriminativo moderado', 'un poder discriminativo bajo'))}, y el coeficiente Kappa de {round(kap, 3)} sugiere {ifelse(kap >= 0.6, 'una concordancia sustancial', ifelse(kap >= 0.4, 'una concordancia moderada', 'una concordancia débil'))}. 
+  {ifelse(roc_auc < 0.7,
+    'Se recomienda interpretar las proyecciones con cautela dado el desempeño limitado del modelo.',
+    'Las proyecciones espaciales pueden considerarse confiables para orientar decisiones de conservación.')}
+
+  ---
+
+  *For *{params$species}*, the model shows **{calidad_auc_en}** performance (AUC = {round(roc_auc, 3)}), with a Boyce Index of {round(boyce, 3)} confirming {ifelse(boyce > 0.7, 'high predictive capacity for presence areas', ifelse(boyce > 0.4, 'moderate predictive capacity', 'limited predictive capacity'))}.
+  The TSS of {round(tss, 3)} indicates {ifelse(tss >= 0.6, 'good discriminative power', ifelse(tss >= 0.4, 'moderate discriminative power', 'low discriminative power'))}, and Cohen's Kappa of {round(kap, 3)} suggests {ifelse(kap >= 0.6, 'substantial agreement', ifelse(kap >= 0.4, 'moderate agreement', 'weak agreement'))}. 
+  {ifelse(roc_auc < 0.7,
+    'Projections should be interpreted with caution given the limited model performance.',
+    'Spatial projections can be considered reliable for guiding conservation decisions.')}*"
+))
+```
+
+
+

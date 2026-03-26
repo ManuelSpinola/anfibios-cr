@@ -1,0 +1,47 @@
+---
+title: "Untitled"
+---
+
+
+```{r}
+library(tidyverse)
+library(sf)
+library(h3sdm)
+```
+
+```{r}
+ap <- st_read(here("vectores_para_modelos/asp_terrestres_cr.gpkg"))
+```
+
+
+# Grilla de hexágonos de resolución 8
+
+```{r}
+#| include: true
+h8 <- h3sdm_get_grid(cr, res = 8)
+```
+
+```{r}
+#| include: true
+h8_5367 <- h8 |>
+  st_transform(crs = 5367)
+```
+
+```{r}
+h8_sinac <- h8_5367 |>
+  st_join(ap |> select(nombre_asp, cat_manejo, siglas_cat), 
+          join = st_intersects, 
+          largest = TRUE) |>
+  st_drop_geometry() |>
+  mutate(protegido = !is.na(cat_manejo))
+```
+
+```{r}
+h8_sinac
+```
+
+
+```{r}
+saveRDS(h8_sinac, here("vectores_para_modelos/h8_sinac.rds"))
+```
+

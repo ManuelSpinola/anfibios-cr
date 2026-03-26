@@ -1,0 +1,29 @@
+---
+title: "Untitled"
+---
+
+```{r}
+library(tidyverse)
+library(tinytable)
+```
+
+```{r}
+tabla_depuracion <- data.frame(
+  Paso = c(
+    "Datos brutos GBIF",
+    "Sin coordenadas ni taxonomía",
+    "Sin géneros sin especie y foráneas",
+    "Modelables (≥ 30 hexágonos H3 r8)"
+  ),
+  Registros = c("104,610", "77,005", "76,785", "—"),
+  Especies = c("—", "246", "233", "134")
+)
+
+tt(tabla_depuracion)
+```
+
+```{r}
+tt(tabla_depuracion,
+   caption = "Proceso de depuración de registros de anfibios de Costa Rica",
+   notes = "Thinning espacial aplicado con índice H3 resolución 8 (~74 ha por hexágono)")
+```

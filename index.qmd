@@ -1,0 +1,343 @@
+---
+title: "Impacto del Cambio Climático en Anfibios de Costa Rica"
+subtitle: "Impact of Climate Change on Amphibians of Costa Rica"
+
+author:
+  - name: Manuel Spínola
+    url: http://www.icomvis.una.ac.cr/index.php/manuel
+    affiliation: ICOMVIS - UNA
+    affiliation-url: http://www.icomvis.una.ac.cr/
+    orcid: 0000-0002-7839-1908
+    
+  - name: Natalie Sánchez
+    url: https://sanchezu9.wixsite.com/natalie-v-sanchez
+    affiliation: ICOMVIS - UNA
+    affiliation-url: http://www.icomvis.una.ac.cr/
+    orcid: 0000-0002-2105-1777
+    
+title-block-banner: "imagenes/william-warby-Hm3KqPdhq_M-unsplash.jpg"
+title-block-banner-color: "white"
+title-block-style: "default"  
+  
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    theme: cosmo
+    self-contained: true
+
+date: today
+
+citation: true
+
+bibliography: references.bib
+csl: apa.csl  # opcional, define el estilo de citación
+
+lang: es
+
+execute:
+  message: false
+  warning: false
+---
+
+## **Presentación** / *Overview*
+
+::: {.panel-tabset}
+## Español
+
+Los anfibios constituyen uno de los grupos de vertebrados más amenazados del planeta 
+y son considerados indicadores sensibles de la salud de los ecosistemas. Costa Rica, 
+con su extraordinaria biodiversidad y alta tasa de endemismo, alberga más de 200 
+especies de anfibios distribuidas en tres órdenes: Anura (ranas y sapos), Caudata 
+(salamandras) y Gymnophiona (cecilias).
+
+Este proyecto modela la distribución potencial presente y futura de las especies de 
+anfibios de Costa Rica bajo el escenario de cambio climático SSP5-8.5 (2041–2070), 
+evaluando el cambio en idoneidad de hábitat a escala nacional.
+
+## English
+
+Amphibians are among the most threatened vertebrate groups on the planet and are 
+considered sensitive indicators of ecosystem health. Costa Rica, with its extraordinary 
+biodiversity and high endemism, harbors more than 200 amphibian species distributed 
+across three orders: Anura (frogs and toads), Caudata (salamanders), and Gymnophiona 
+(caecilians).
+
+This project models the present and future potential distribution of Costa Rican 
+amphibian species under the SSP5-8.5 climate change scenario (2041–2070), evaluating 
+changes in habitat suitability at the national scale.
+:::
+
+---
+
+## **Métodos** / *Methods*
+
+::: {.panel-tabset}
+## Español
+
+Todo el análisis fue realizado en **R** [@RCoreTeam2024] usando RStudio como 
+entorno de desarrollo. Los documentos y reportes fueron generados con **Quarto** [@Quarto2024].
+
+## English
+
+All analyses were performed in **R** (R Core Team 2024) using RStudio as the 
+development environment. Documents and reports were generated with **Quarto**.
+:::
+
+### **Datos de presencia** / *Occurrence data*
+
+::: {.panel-tabset}
+## Español
+
+Los registros de presencia de cada especie fueron descargados de 
+[GBIF](https://www.gbif.org) e [iNaturalist](https://www.inaturalist.org) y agregados a una grilla hexagonal H3 de resolución 8 (~0.74 km² por hexágono) usando la función `h3sdm_pa` del paquete `h3sdm`, restringiendo la consulta al territorio de Costa Rica. La agregación a hexágonos permite estandarizar el esfuerzo de muestreo y reducir el 
+sesgo espacial inherente a las bases de datos de biodiversidad. Los registros duplicados dentro del mismo hexágono fueron eliminados automáticamente.
+
+## English
+
+Presence records for each species were downloaded from [GBIF](https://www.gbif.org) 
+and [iNaturalist](https://www.inaturalist.org) and aggregated to an H3 hexagonal grid at resolution 8 (~0.74 km² per hexagon) using the `h3sdm_pa` function from the `h3sdm` package, restricting the query to Costa Rica. Aggregation to hexagons standardizes sampling effort and reduces the spatial bias inherent in biodiversity databases. 
+Duplicate records within the same hexagon were automatically removed.
+:::
+
+### **Variables predictoras** / *Predictor variables*
+
+::: {.panel-tabset}
+## Español
+
+Se utilizaron tres grupos de variables predictoras:
+
+## English
+
+Three groups of predictor variables were used:
+:::
+
+
+##### **1. Variables bioclimáticas** / *Bioclimatic variables*
+
+::: {.panel-tabset}
+## Español
+
+19 variables bioclimáticas de [CHELSA](https://chelsa-climate.org) (Climatologies at High resolution for the Earth's Land Surface Areas):
+
+-   Período de referencia: 1981–2010
+-   Resolución: 1 km
+
+## English
+
+19 bioclimatic variables from [CHELSA](https://chelsa-climate.org):
+
+-   Reference period: 1981–2010
+-   Resolution: 1 km
+:::
+
+##### **2. Proporciones de cobertura del suelo** / *Land use/land cover proportions*
+
+::: {.panel-tabset}
+## Español
+
+Proporciones de las clases de cobertura del suelo calculadas para cada hexágono de la grilla H3 (resolución 8, ~0.74 km²), derivadas de la clasificación 
+[ESRI Land Cover 2024](https://www.arcgis.com/home/item.html?id=cfcb7609de5f478eb7666240902d4d3d) de 10 m de resolución.
+
+## English
+
+Proportions of land cover classes calculated for each hexagon of the H3 grid (resolution 8, ~0.74 km²), derived from the 
+[ESRI Land Cover 2024](https://www.arcgis.com/home/item.html?id=cfcb7609de5f478eb7666240902d4d3d) classification at 10 m resolution.
+:::
+
+##### **3. Métricas de paisaje** / *Landscape metrics*
+
+::: {.panel-tabset}
+## Español
+
+Métricas de complejidad del paisaje basadas en la teoría de la información 
+[@Nowosad2019], calculadas con el paquete `landscapemetrics` [@Hesselbarth2019]:
+
+| Métrica | Descripción |
+|---|---|
+| `H(x)` — Entropía marginal | Diversidad temática de categorías espaciales |
+| `H(y\|x)` — Entropía condicional | Complejidad configuracional del patrón espacial |
+| `H(x,y)` — Entropía conjunta | Complejidad espacio-temática global |
+| `I(y,x)` — Información mutua | Información que una categoría provee sobre su vecina |
+| `I_rel` — Información mutua relativa | Información mutua normalizada por entropía marginal |
+
+## English
+
+Landscape complexity metrics based on information theory 
+[@Nowosad2019], calculated with the `landscapemetrics` package [@Hesselbarth2019]:
+
+| Metric | Description |
+|---|---|
+| `H(x)` — Marginal entropy | Thematic diversity of spatial categories |
+| `H(y\|x)` — Conditional entropy | Configurational complexity of the spatial pattern |
+| `H(x,y)` — Joint entropy | Overall spatio-thematic complexity |
+| `I(y,x)` — Mutual information | Information one category provides about its neighbor |
+| `I_rel` — Relative mutual information | Mutual information normalized by marginal entropy |
+:::
+
+### **Escenario futuro** / *Future scenario*
+
+::: {.panel-tabset}
+## Español
+
+Las proyecciones futuras se basan en el escenario **SSP5-8.5** para el período 
+**2041–2070**, utilizando variables bioclimáticas de CHELSA bajo este escenario de 
+altas emisiones. Las proporciones de cobertura del suelo y las métricas de complejidad 
+del paisaje para el escenario futuro se derivaron de la clasificación 
+[ESRI Land Cover 2050](https://www.arcgis.com/home/item.html?id=afeaa714dd8b4553bc92898002abf145), 
+que proyecta cambios en el uso del suelo bajo escenarios de desarrollo global.
+
+## English
+
+Future projections are based on the **SSP5-8.5** scenario for the period **2041–2070**, 
+using CHELSA bioclimatic variables under this high-emissions scenario. Land cover 
+proportions and landscape complexity metrics for the future scenario were derived from 
+the [ESRI Land Cover 2050](https://www.arcgis.com/home/item.html?id=afeaa714dd8b4553bc92898002abf145) 
+classification, which projects land use changes under global development scenarios.
+:::
+
+### **Modelo** / *Model*
+
+::: {.panel-tabset}
+## Español
+
+Se ajustó un **Modelo Aditivo Generalizado (GAM)** con familia binomial (logit) para 
+cada especie usando el paquete `h3sdm`, desarrollado específicamente para modelaje de 
+distribución de especies sobre grillas hexagonales H3 siguiendo el paradigma de 
+`tidymodels`. El proceso de modelaje incluyó:
+
+1. **Preparación de datos** — Las variables predictoras fueron estandarizadas 
+(media = 0, desviación estándar = 1) usando la función `h3sdm_recipe_gam`.
+2. **Selección de variables** — Se ajustó un GAM inicial con todos los predictores 
+usando `mgcv` y se retuvieron únicamente las variables con p < 0.05.
+3. **Selección de modelos** — Se aplicó `dredge` (paquete `MuMIn`) sobre el modelo 
+reducido para identificar la combinación óptima de predictores por AICc.
+4. **Ajuste final** — El modelo final se ajustó con método REML mediante las funciones 
+`h3sdm_workflow_gam` y `h3sdm_fit_model`.
+5. **Predicción** — La distribución potencial fue proyectada sobre toda la grilla H3 
+de Costa Rica usando `h3sdm_predict`.
+
+## English
+
+A **Generalized Additive Model (GAM)** with binomial family (logit) was fitted for 
+each species using the `h3sdm` package, developed specifically for species distribution 
+modeling on H3 hexagonal grids following the `tidymodels` paradigm. The modeling 
+process included:
+
+1. **Data preparation** — Predictor variables were standardized 
+(mean = 0, standard deviation = 1) using the `h3sdm_recipe_gam` function.
+2. **Variable selection** — An initial GAM was fitted with all predictors using 
+`mgcv`; only variables with p < 0.05 were retained.
+3. **Model selection** — `dredge` (package `MuMIn`) was applied to the reduced model 
+to identify the optimal predictor combination by AICc.
+4. **Final fitting** — The final model was fitted with REML using the 
+`h3sdm_workflow_gam` and `h3sdm_fit_model` functions.
+5. **Prediction** — Potential distribution was projected across the entire Costa Rica 
+H3 grid using `h3sdm_predict`.
+
+:::
+
+### **Validación** / *Validation*
+
+::: {.panel-tabset}
+## Español
+
+Se utilizó **validación cruzada espacial** con 3 folds (bloques espaciales de 30 km) 
+mediante la función `h3sdm_spatial_cv` del paquete `h3sdm`, para obtener estimaciones 
+imparciales del desempeño predictivo. Las métricas de evaluación reportadas fueron:
+
+- **AUC-ROC** — Área Bajo la Curva ROC
+- **Precisión global** — Accuracy
+- **Medida F** — F-measure
+- **Kappa de Cohen** — concordancia corregida por azar
+- **Sensibilidad** — Sensitivity
+- **Especificidad** — Specificity
+- **Verdadera Habilidad Estadística (TSS)**
+- **Índice de Boyce**
+
+## English
+
+**Spatial cross-validation** with 3 folds (30 km spatial blocks) was performed using 
+the `h3sdm_spatial_cv` function from the `h3sdm` package, to obtain unbiased estimates 
+of predictive performance. The following evaluation metrics were reported:
+
+- **AUC-ROC** — Area Under the ROC Curve
+- **Accuracy** — Overall accuracy
+- **F-measure**
+- **Cohen's Kappa** — chance-corrected agreement
+- **Sensitivity**
+- **Specificity**
+- **True Skill Statistic (TSS)**
+- **Boyce Index**
+:::
+
+---
+
+## **Cómo usar este sitio** / *How to use this site*
+
+::: {.panel-tabset}
+## Español
+
+Cada especie tiene su propio reporte accesible desde el panel de navegación izquierdo, 
+organizado por **Orden > Familia > Especie**. Cada reporte incluye:
+
+- Ficha con foto de iNaturalist y datos básicos
+- Mapa de registros de presencia
+- Distribución potencial presente y futura
+- Mapa de cambio en idoneidad de hábitat
+- Comparación de área por categoría de hábitat
+- Diagrama Sankey de transición entre categorías
+- Métricas de evaluación del modelo
+
+## English
+
+Each species has its own report accessible from the left navigation panel, organized 
+by **Order > Family > Species**. Each report includes:
+
+- Species profile with iNaturalist photo and basic data
+- Occurrence records map
+- Present and future potential distribution
+- Habitat suitability change map
+- Area comparison by habitat category
+- Sankey diagram of category transitions
+- Model evaluation metrics
+:::
+
+---
+
+## **Referencias** / *References*
+
+::: {#refs}
+:::
+
+
+---
+
+## **Paquetes de R utilizados** / *R packages used*
+
+::: {.panel-tabset}
+## Español
+
+| Paquete | Uso | Referencia |
+|---|---|---|
+| `h3sdm` | Descarga de registros, grilla H3 y modelaje SDM | @Spinola2026 |
+| `mgcv` | Ajuste de GAMs | @Wood2017 |
+| `MuMIn` | Selección de modelos por AICc | @Barton2024 |
+| `landscapemetrics` | Métricas de paisaje | @Hesselbarth2019 |
+| `sf` | Manejo de datos espaciales vectoriales | @Pebesma2018 |
+| `terra` | Procesamiento de datos raster | @Hijmans2024 |
+| `tidyverse` | Manipulación y visualización de datos | @Wickham2019 |
+
+## English
+
+| Package | Use | Reference |
+|---|---|---|
+| `h3sdm` | Record download, H3 grid and SDM modeling | @Spinola2026 |
+| `mgcv` | GAM fitting | @Wood2017 |
+| `MuMIn` | Model selection by AICc | @Barton2024 |
+| `landscapemetrics` | Landscape metrics | @Hesselbarth2019 |
+| `sf` | Spatial vector data handling | @Pebesma2018 |
+| `terra` | Raster data processing | @Hijmans2024 |
+| `tidyverse` | Data manipulation and visualization | @Wickham2019 |
+
+:::

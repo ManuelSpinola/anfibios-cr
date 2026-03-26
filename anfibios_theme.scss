@@ -1,0 +1,180 @@
+/*-- scss:defaults --*/
+
+$navbar-bg: #a31e32;
+
+$sidebar-fg: #a31e32;
+
+
+/*-- scss:rules --*/
+
+.navbar {
+  height: 100px;
+  font-size: 20px; // Base font size for the entire navbar
+  font-family: 'Roboto', sans-serif; // Optional: Set the font family
+
+  .navbar-brand {
+    font-size: 30px; // Font size for the brand/logo
+    font-weight: normal; // Optional: Make the brand/logo bold
+  }
+}
+
+
+.navbar-logo {
+  max-height: 70px;
+}
+
+.quarto-title-banner {
+  text-align: center;
+  min-height: 400px;  /* cambia este valor */
+  padding: 4rem 2rem;
+  display: flex;
+  align-items: center;
+  background-size: cover;
+  background-position: center;
+}
+
+.quarto-title-banner::after {
+  content: "Foto: William Warby / Unsplash";
+  position: absolute;
+  bottom: 9.75rem;
+  right: 1rem;
+  font-size: 0.55rem;
+  color: rgba(255,255,255,0.85);
+  background: rgba(0,0,0,0.45);
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+}
+
+.quarto-title-banner h1 {
+  font-size: clamp(2.8rem, 5vw, 4rem);
+  line-height: 1.1;
+  color: white;
+}
+
+.quarto-title-banner .subtitle,
+.quarto-title-banner p.subtitle {
+  font-size: clamp(1.8rem, 3vw, 2rem);
+  color: white;
+}
+
+
+/* Apply Roboto font to the sidebar and links */
+.sidebar-item {
+  font-family: 'Roboto', Arial, sans-serif; /* Apply Roboto font */
+  padding: 8px; /* Add spacing for better UI */
+}
+
+/* Apply styles for sidebar link text */
+.sidebar-item-text.sidebar-link.text-start {
+  font-family: 'Roboto', Arial, sans-serif; /* Apply Roboto font */
+  font-size: 18px; /* font size */
+  font-weight: bold; /* Bold text for emphasis */
+  color: #333; /* Dark gray for readability */
+  text-decoration: none; /* Remove underline from links */
+  transition: color 0.3s ease; /* Smooth color change on hover */
+}
+
+/* General styles for all links in the sidebar navigation */
+.sidebar-navigation a {
+    color: #B71234; /* Default link color */
+    text-decoration: none; /* Remove underline */
+    font-size: 14px; /* Adjust font size */
+    font-weight: bold; /* Make links bold */
+    display: block; /* Make links block-level for better spacing */
+    padding: 0px 0px; /* Add padding for clickability */
+    transition: color 0.3s ease, text-decoration 0.3s ease; /* Smooth transitions */
+}
+
+/* Hover effect */
+.sidebar-navigation a:hover {
+    color: #0000ff; /* Darker color on hover */
+    text-decoration: underline; /* Add underline on hover */
+}
+
+
+.sidebar nav[role="doc-toc"] ul > li > a.active {
+    color: #B71234 !important;
+}
+
+
+
+
+.blue {
+  color: #0041C2;
+  font-weight: inherit;
+}
+
+.blue2 {
+  color: #1565c0;
+  font-weight: inherit;
+}
+
+.blue2 {
+  color: #4169E1;
+  font-weight: inherit;
+}
+
+.red {
+  color: #DE3163;
+  font-weight: inherit;
+}
+
+.red2 {
+  color: #DC143C;
+  font-weight: inherit;
+}
+
+.red3 {
+  color: #B22222;
+  font-weight: inherit;
+}
+
+.orange {
+  color: #FF4500;
+  font-weight: normal;
+}
+
+.purple {
+  color: #800080;
+  font-weight: normal;
+}
+
+.green {
+  color: #2e7d32;
+  font-weight: inherit;
+}
+
+.green2 {
+  color: #2e7d32;
+  font-weight: inherit;
+}
+
+.green3 {
+  color: #00c853;
+  font-weight: normal;
+}
+
+.gray {
+  color: #607d8b;
+  font-weight: normal;
+}
+
+.purple {
+  color: #9c27b0;
+  font-weight: normal;
+}
+
+
+@media (max-width: 768px) {
+  body::before {
+    content: "☰  Tocá la esquina izquierda para ver las especies";
+    display: block;
+    background-color: #f0f4f0;
+    color: #333;
+    text-align: center;
+    padding: 8px;
+    font-size: 0.85rem;
+    border-bottom: 1px solid #ccc;
+  }
+}
+

@@ -1,0 +1,367 @@
+---
+title: "Preparación de predictores"
+format: html
+execute:
+  warning: false
+  message: false
+# ============================================================
+# PARÁMETROS DEL PROYECTO — editar aquí antes de correr
+# ============================================================
+params:
+  # Sistema de referencia de coordenadas (EPSG local del proyecto)
+  crs_local: 5367
+
+  # Resolución de la grilla H3
+  h3_res: 8
+
+  # Área mínima de hexágono a conservar (m²)
+  hex_area_min: 100000
+
+  # --- Rasters bioclimáticos ---
+  bio_presente:   "rasters_bio_chelsa/chelsa_CR_1981_2010.tif"
+  bio_futuro:     "rasters_bio_chelsa/chelsa_CR_2041_2070_ssp585.tif"
+
+  # --- Rasters LULC (ESRI Land Cover) ---
+  lulc_presente:  "rasters_lulc_esri/lulc_esri_cr_2024.tif"
+  lulc_futuro_raw: "rasters_lulc_esri/lulc2050_cr.tif"
+
+  # Rutas intermedias/derivadas de LULC futuro (se generan en el script)
+  lulc_futuro_reproj:   "rasters_lulc_esri/lulc2050_cr_5367.tif"
+  lulc_futuro_reclass:  "rasters_lulc_esri/lulc_future_reproj_reclass.tif"
+  lulc_futuro_10m:      "rasters_lulc_esri/lulc2050_cr_5367_reclass_10m.tif"
+
+  # --- Rasters de población ---
+  pop_presente: "rasters_pop/cri_pop_2024_CN_100m_R2025A_v1.tif"
+  pop_futuro:   "rasters_pop/cri_pop_2030_CN_100m_R2025A_v1.tif"
+
+  # --- Salidas ---
+  out_presente_rds:  "vectores_para_modelos/predictores_presente_finales.rds"
+  out_presente_gpkg: "vectores_para_modelos/predictores_presente_finales.gpkg"
+  out_futuro_rds:    "vectores_para_modelos/predictores_futuro_finales.rds"
+  out_futuro_gpkg:   "vectores_para_modelos/predictores_futuro_finales.gpkg"
+
+  # --- Variables finales a conservar (tras filtro de colinealidad) ---
+  # Ajustar según resultado de filter_collinear() en cada proyecto
+  vars_bio_finales: ["BIO2", "BIO3", "BIO4", "BIO13", "BIO15", "BIO19"]
+
+  # Clases LULC a conservar (props que no son artefactos ni clases vacías)
+  # class_prop_1=Water, 2=Trees, 5=Crops, 7=Built, 11=Rangeland
+  vars_lulc_finales: ["class_prop_1", "class_prop_2", "class_prop_5",
+                      "class_prop_7", "class_prop_11"]
+
+  # Métricas de paisaje a conservar
+  vars_it_finales: ["lsm_condent", "lsm_relmutinf"]
+---
+
+```{r setup}
+#| include: false
+library(tidyverse)
+library(easystats)
+library(here)
+library(sf)
+library(terra)
+library(tidysdm)
+library(h3sdm)
+
+# Construir vector de variables finales a partir de params
+vars_finales <- c(
+  "h3_address",
+  params$vars_bio_finales,
+  params$vars_lulc_finales,
+  params$vars_it_finales,
+  "geometry"
+)
+```
+
+# Límites del área de estudio
+
+> Reemplazá `aoi_source` con el objeto o la lectura que corresponda al proyecto.
+> Ejemplos:
+> - Desde un paquete: `aoi_source <- mi_paquete::contorno_pais`
+> - Desde un archivo: `aoi_source <- st_read(here("vectores/aoi.gpkg"))`
+
+```{r limites}
+# Definir aoi_source antes de correr este chunk (ver nota arriba)
+aoi <- aoi_source |>
+  st_transform(crs = params$crs_local)
+```
+
+---
+
+# Grilla de hexágonos H3
+
+```{r grilla-h3}
+h3_grid_raw <- h3sdm_get_grid(aoi, res = params$h3_res)
+
+h3_grid <- h3_grid_raw |>
+  st_transform(crs = params$crs_local) |>
+  # Eliminar hexágonos marginales (bordes recortados muy pequeños)
+  filter(as.numeric(st_area(geometry)) > params$hex_area_min)
+
+cat("Hexágonos válidos:", nrow(h3_grid), "\n")
+```
+
+---
+
+# Predictores para el PRESENTE
+
+## Variables bioclimáticas (CHELSA)
+
+```{r bio-presente}
+bio <- terra::rast(here(params$bio_presente))
+bio <- project(bio, paste0("EPSG:", params$crs_local))
+
+bio_predictors <- h3sdm_extract_num(bio, h3_grid)
+```
+
+```{r bio-presente-viz}
+#| eval: false
+# Visualización de prueba — BIO1 (temperatura media anual)
+ggplot() +
+  geom_sf(data = bio_predictors, aes(fill = BIO1), color = "transparent") +
+  scale_fill_viridis_c(option = "B") +
+  labs(title = "BIO1 — Temperatura media anual")
+```
+
+## LULC presente (ESRI Land Cover)
+
+```{r lulc-presente}
+lulc_present <- rast(here(params$lulc_presente))
+lulc_present <- project(lulc_present, paste0("EPSG:", params$crs_local))
+
+# Proporciones de cada clase por hexágono
+lulc_p <- h3sdm_extract_cat(lulc_present, h3_grid, proportion = TRUE)
+
+# Métricas de información del paisaje (entropía, información mutua, etc.)
+it_p <- h3sdm_calculate_it_metrics(lulc_present, h3_grid)
+```
+
+> **Clases ESRI conservadas en el modelo:**
+> `class_prop_1` = Water · `class_prop_2` = Trees · `class_prop_5` = Crops ·
+> `class_prop_7` = Built area · `class_prop_11` = Rangeland
+>
+> Se excluyen: `class_prop_3` y `class_prop_6` (posibles artefactos),
+> `class_prop_9` y `class_prop_10` (nieve/hielo y nubes),
+> `class_prop_4` (Flooded vegetation) y `class_prop_8` (Bare ground)
+> por representación deficiente en el área de estudio.
+
+## Población presente
+
+```{r pop-presente}
+pop_2024 <- rast(here(params$pop_presente))
+pop_2024 <- project(pop_2024, paste0("EPSG:", params$crs_local))
+pop_2024 <- crop(pop_2024, aoi, mask = TRUE)
+pop_2024[is.na(pop_2024)] <- 0   # NA → 0 personas
+
+pop_predictor <- h3sdm_extract_num(pop_2024, h3_grid)
+```
+
+## Ensamblar predictores
+
+```{r ensamble-presente}
+predictores_p <- mutate(bio_predictors, lulc_p, it_p, pop_predictor)
+```
+
+## ⚠️ PASO MANUAL — Revisar colinealidad antes de continuar
+
+```{r colinealidad}
+#| eval: true
+# Correr este chunk de forma aislada (Ctrl+Enter en el chunk)
+# y revisar qué variables recomienda eliminar.
+# Luego actualizar vars_bio_finales en el YAML del encabezado
+# antes de correr los chunks siguientes.
+filter_collinear(predictores_p)
+```
+
+> **¿Qué hacer con el resultado?**
+>
+> `filter_collinear()` devuelve el conjunto de variables **no colineales**
+> que recomienda conservar. Compará esa lista con lo que tenés en
+> `vars_bio_finales` dentro de `params:` al inicio del archivo.
+> Si difiere, actualizá el YAML y volvé a renderizar desde aquí.
+>
+> Las variables LULC (`class_prop_*`), de paisaje (`lsm_*`) y población
+> no pasan por este filtro — su inclusión/exclusión se decide temáticamente
+> y se controla con `vars_lulc_finales` y `vars_it_finales` en `params:`.
+
+```{r seleccion-presente}
+# Recién correr este chunk después de verificar el paso anterior
+predictores_presente_finales <- predictores_p |>
+  select(all_of(vars_finales))
+
+glimpse(predictores_presente_finales)
+```
+
+## Guardar predictores presentes
+
+```{r guardar-presente}
+saveRDS(predictores_presente_finales, here(params$out_presente_rds))
+```
+
+```{r guardar-presente-gpkg}
+#| eval: false
+st_write(
+  predictores_presente_finales,
+  here(params$out_presente_gpkg),
+  layer_options = "GEOMETRY_NAME=geometry",
+  delete_layer = TRUE
+)
+```
+
+---
+
+# Predictores para el FUTURO
+
+## Variables bioclimáticas futuras (CHELSA)
+
+```{r bio-futuro}
+bio_f <- terra::rast(here(params$bio_futuro))
+bio_f <- project(bio_f, paste0("EPSG:", params$crs_local))
+
+bio_predictors_f <- h3sdm_extract_num(bio_f, h3_grid)
+```
+
+## LULC futuro — reproyección y reclasificación
+
+El raster LULC futuro usa una clasificación distinta a ESRI 2024, por lo que
+se reclasifica para que coincida con las mismas clases del presente.
+
+```{r lulc-futuro-reproyectar}
+#| eval: false
+lulc_future <- rast(here(params$lulc_futuro_raw))
+
+lulc_future_reproj <- project(lulc_future, paste0("EPSG:", params$crs_local),
+                              method = "near")
+
+writeRaster(lulc_future_reproj,
+            here(params$lulc_futuro_reproj),
+            datatype = "INT1U",
+            overwrite = TRUE)
+```
+
+```{r lulc-futuro-reclasificar}
+#| eval: false
+lulc_future_reproj <- rast(here(params$lulc_futuro_reproj))
+
+# Tabla de reclasificación: valor_origen → valor_destino (clases ESRI)
+reclass_matrix <- matrix(c(
+  1,  5,   # Mostly Cropland    → Crops (5)
+  2,  11,  # Grassland/Scrub    → Rangeland (11)
+  3,  2,   # Deciduous Forest   → Trees (2)
+  4,  2,   # Evergreen Forest   → Trees (2)
+  5,  11,  # Sparse Vegetation  → Rangeland (11)
+  6,  8,   # Bare Area          → Bare ground (8)
+  7,  4,   # Swampy             → Flooded vegetation (4)
+  8,  7,   # Urban              → Built area (7)
+  9,  1,   # Surface Water      → Water (1)
+  10, 9    # Snow and Ice       → Snow/Ice (9)
+), ncol = 2, byrow = TRUE)
+
+lulc_future_reclass <- classify(lulc_future_reproj, reclass_matrix)
+
+# Etiquetas de categorías
+cat_table <- data.frame(
+  value = c(1, 2, 4, 5, 7, 8, 11),
+  class = c("Water", "Trees", "Flooded vegetation",
+            "Crops", "Built area", "Bare ground", "Rangeland")
+)
+levels(lulc_future_reclass) <- cat_table
+
+# Tabla de colores (para visualización)
+coltab(lulc_future_reclass) <- data.frame(
+  value = 0:11,
+  col = c(
+    "#00000000",  # 0  - sin valor
+    "#419bdf",    # 1  - Water
+    "#397d49",    # 2  - Trees
+    "#00000000",  # 3  - no existe
+    "#7a87c6",    # 4  - Flooded vegetation
+    "#e49635",    # 5  - Crops
+    "#00000000",  # 6  - no existe
+    "#c4281b",    # 7  - Built area
+    "#a59b8f",    # 8  - Bare ground
+    "#00000000",  # 9  - Snow/Ice
+    "#00000000",  # 10 - Clouds
+    "#e3e2c3"     # 11 - Rangeland
+  )
+)
+
+writeRaster(lulc_future_reclass,
+            here(params$lulc_futuro_reclass),
+            datatype = "INT1U",
+            overwrite = TRUE)
+```
+
+```{r lulc-futuro-resample}
+#| eval: false
+# Remuestrear al mismo grid que el LULC presente (resolución 10 m)
+lulc_future_reclass <- rast(here(params$lulc_futuro_reclass))
+lulc_present_ref    <- rast(here(params$lulc_presente))
+lulc_present_ref    <- project(lulc_present_ref,
+                                paste0("EPSG:", params$crs_local))
+
+lulc_future_10m <- resample(lulc_future_reclass, lulc_present_ref,
+                             method = "near")
+
+writeRaster(lulc_future_10m,
+            here(params$lulc_futuro_10m),
+            datatype = "INT1U",
+            overwrite = TRUE)
+```
+
+```{r lulc-futuro-cargar}
+lulc_future_10m <- rast(here(params$lulc_futuro_10m))
+
+# Reemplazar NA con valor centinela para que h3sdm_extract_cat lo maneje
+lulc_future_fixed <- lulc_future_10m
+lulc_future_fixed[is.na(lulc_future_fixed)] <- -9999
+
+levels(lulc_future_fixed)[[1]] <- rbind(
+  levels(lulc_future_fixed)[[1]],
+  data.frame(value = -9999, class = "NoData")
+)
+```
+
+```{r lulc-futuro-extraer}
+lulc_f <- h3sdm_extract_cat(lulc_future_fixed, h3_grid, proportion = TRUE)
+it_p_f <- h3sdm_calculate_it_metrics(lulc_future_fixed, h3_grid)
+```
+
+## Población futura
+
+```{r pop-futuro}
+pop_2030 <- rast(here(params$pop_futuro))
+pop_2030 <- project(pop_2030, paste0("EPSG:", params$crs_local))
+pop_2030 <- crop(pop_2030, aoi, mask = TRUE)
+pop_2030[is.na(pop_2030)] <- 0
+
+pop_predictor_f <- h3sdm_extract_num(pop_2030, h3_grid)
+```
+
+## Ensamblar y seleccionar variables futuras
+
+```{r ensamble-futuro}
+predictores_f <- mutate(bio_predictors_f, lulc_f, it_p_f, pop_predictor_f)
+
+# Aplicar la misma selección de variables que en el presente
+predictores_futuro_finales <- predictores_f |>
+  select(all_of(vars_finales))
+
+glimpse(predictores_futuro_finales)
+```
+
+## Guardar predictores futuros
+
+```{r guardar-futuro}
+saveRDS(predictores_futuro_finales, here(params$out_futuro_rds))
+```
+
+```{r guardar-futuro-gpkg}
+#| eval: false
+st_write(
+  predictores_futuro_finales,
+  here(params$out_futuro_gpkg),
+  layer_options = "GEOMETRY_NAME=geometry",
+  delete_layer = TRUE
+)
+```

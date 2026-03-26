@@ -1,0 +1,257 @@
+---
+title: "Untitled"
+---
+
+```{r}
+library(tidyverse)
+library(easystats)
+library(here)
+library(sf)
+library(terra)
+library(tidyterra)
+library(paisaje)
+library(h3sdm)
+library(tinytable)
+```
+
+Al final terminé bajando todos los registros de anfibios desde GBIF como un csv
+
+```{r}
+cr <- cr_outline_c |>
+  st_transform(crs = 5367)
+```
+
+```{r}
+# Cargar datos
+all <- data_read(here("datos/0019019-260226173443078.csv"))
+```
+
+```{r}
+# Seleccionar columnas necesarias
+all <- all |> 
+  select(order, family, species, decimalLatitude, decimalLongitude)
+```
+
+```{r}
+# Limpieza general
+all <- all |> 
+  filter(
+    !is.na(species) & species != "",
+    !is.na(order) & order != "",
+    !is.na(decimalLatitude),
+    !is.na(decimalLongitude)
+  )
+```
+
+```{r}
+# Eliminar registros identificados solo a nivel de género (sin epíteto específico)
+all <- all |> 
+  filter(str_detect(species, " "))
+```
+
+```{r}
+dim(all)
+```
+
+```{r}
+# Eliminar especies foráneas o fuera de rango para Costa Rica
+especies_foraneas <- c(
+  "Anaxyrus americanus",
+  "Lithobates catesbeianus",
+  "Platymantis dorsalis",
+  "Microhyla pulchra",
+  "Lithobates areolatus",
+  "Lithobates berlandieri",
+  "Lithobates heckscheri",
+  "Lithobates maculatus",
+  "Lithobates pipiens",
+  "Pseudacris triseriata",
+  "Adelphobates galactonotus",
+  "Oophaga histrionica",
+  "Andinobates viridis"
+)
+```
+
+```{r}
+all <- all |> 
+  filter(!species %in% especies_foraneas)
+```
+
+```{r}
+all <- all |> 
+  distinct(species, decimalLatitude, decimalLongitude, .keep_all = TRUE)
+```
+
+```{r}
+# Verificar
+nrow(all)
+n_distinct(all$species)
+```
+
+```{r}
+# Vistazo general
+glimpse(all)
+```
+
+```{r}
+# Resumen actualizado por orden
+all |>
+  group_by(order) |>
+  summarise(
+    n_registros = n(),
+    n_familias = n_distinct(family),
+    n_especies = n_distinct(species)
+  ) |>
+  arrange(desc(n_registros))
+```
+
+```{r}
+# Resumen por Familia
+resumen_familia <- all |>
+  group_by(order, family) |>
+  summarise(
+    n_registros = n(),
+    n_especies = n_distinct(species),
+    .groups = "drop"
+  ) |>
+  arrange(desc(n_registros))
+
+print(resumen_familia)
+```
+
+```{r}
+# Conteo por especie
+resumen_especie <- all |>
+  group_by(order, family, species) |>
+  summarise(
+    n_registros = n(),
+    .groups = "drop"
+  ) |>
+  arrange(desc(n_registros)) |>
+  print()
+```
+
+```{r}
+# Especies con menos de 30 registros (candidatas a descartar)
+especies_pocas <- resumen_especie |>
+  filter(n_registros < 30)
+
+cat("Especies con menos de 30 registros:", nrow(especies_pocas), "\n")
+cat("Especies con 30 o más registros:", nrow(resumen_especie) - nrow(especies_pocas), "\n")
+```
+
+```{r}
+# Ver qué hay en los registros sin orden
+all |> 
+  filter(order == "" | is.na(order)) |> 
+  select(order, family, species, decimalLatitude, decimalLongitude) |> 
+  as.data.frame() |> 
+  head(30) |>
+  print()
+```
+
+```{r}
+# crear taxonomia
+taxonomia <- all |> 
+  distinct(species, order, family) |> 
+  arrange(order, family, species)
+
+saveRDS(taxonomia, here("datos/taxonomia.rds"))
+```
+
+```{r}
+all_sf <- all |> 
+  st_as_sf(
+    coords = c("decimalLongitude", "decimalLatitude"),
+    crs = 4326
+  )
+```
+
+```{r}
+all_sf_5367 <- all_sf |>
+  st_transform(crs = 5367)
+```
+
+## h8
+
+```{r}
+h8 <- h3sdm_get_grid(cr, res = 8)
+```
+
+```{r}
+h8_5367 <- h8 |>
+  st_transform(crs = 5367)
+```
+
+```{r}
+#| include: true
+# eliminar hexágonos pequeños
+h8_5367 <- h8_5367 |> 
+  filter(as.numeric(st_area(h8_5367)) > 100000)
+```
+
+```{r}
+conteo_h8 <- count_points_in_polygons(all_sf_5367, h8_5367)
+```
+
+```{r}
+dim(conteo_h8)
+```
+
+```{r}
+# Contar hexágonos con presencia (count > 0) por especie
+thinning_resumen_h8 <- conteo_h8 |> 
+  st_drop_geometry() |> 
+  select(-h3_address) |>   # excluir h3_address antes del pivot
+  summarise(across(everything(), ~ sum(. > 0))) |> 
+  pivot_longer(everything(), 
+               names_to = "species", 
+               values_to = "n_hex") |> 
+  mutate(species = str_replace_all(species, "_", " ")) |> 
+  arrange(desc(n_hex))
+
+# Verificar que no haya h3_address
+head(thinning_resumen)
+```
+
+```{r}
+# Binarizar (presencia/ausencia)
+datos_h8_pa <- conteo_h8 |> 
+  mutate(across(-c(geometry, h3_address), ~ if_else(. > 0, 1L, 0L)))
+
+```
+
+```{r}
+datos_h8_pa_long <- datos_h8_pa |> 
+  pivot_longer(
+    cols = -c(geometry, h3_address),
+    names_to = "species",
+    values_to = "presence"
+  ) |> 
+  mutate(species = str_replace_all(species, "_", " ")) |> 
+  left_join(
+    resumen_especie |> select(order, family, species),
+    by = "species"
+  )
+```
+
+```{r}
+dim(datos_h8_pa_long)
+```
+
+```{r}
+# Guardar con todas las especies (rds)
+saveRDS(datos_h8_pa_long, here("vectores_para_modelos/datos_h8_pa_long.rds"))
+```
+
+```{r}
+# Guardar con todas las especies (sf)
+st_write(datos_h8_pa_long, here("vectores_para_modelos/datos_h8_pa_long.gpkg"), layer_options = "GEOMETRY_NAME=geometry", delete_layer = TRUE)
+```
+
+```{r}
+# Lista de especies modelables
+especies_modelables <- thinning_resumen_h8 |> 
+  filter(n_hex >= 30) |> 
+  pull(species)
+```

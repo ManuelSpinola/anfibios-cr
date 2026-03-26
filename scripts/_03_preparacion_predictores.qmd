@@ -1,0 +1,441 @@
+---
+title: "Untitled"
+---
+
+```{r}
+#| include: true
+library(tidyverse)
+library(easystats)
+library(here)
+library(sf)
+library(terra)
+library(tidysdm)
+library(h3sdm)
+```
+
+# Límites de Costa Rica
+
+```{r}
+#| include: true
+cr <- cr_outline_c |>
+  st_transform(crs = 5367)
+```
+
+# Grilla de hexágonos de resolución 8
+
+```{r}
+#| include: true
+h8 <- h3sdm_get_grid(cr, res = 8)
+```
+
+```{r}
+#| include: true
+h8_5367 <- h8_5367 |>
+  st_transform(crs = 5367)
+```
+
+```{r}
+#| include: true
+# eliminar hexágonos pequeños
+h8_5367 <- h8_5367 |> 
+  filter(as.numeric(st_area(h8)) > 100000)
+```
+
+```{r}
+nrow(h8_5367)
+```
+
+```{r}
+h8_5367
+```
+
+# Predictores para el presente
+
+```{r}
+#| eval: false
+bio <- terra::rast(here("rasters_bio_chelsa/chelsa_CR_1981_2010.tif"))
+```
+
+```{r}
+#| eval: false
+bio <- project(bio, "EPSG:5367")
+```
+
+```{r}
+#| eval: false
+bio_predictors <- h3sdm_extract_num(bio, h8_5367)
+```
+
+```{r}
+#| eval: false
+bio_predictors
+```
+
+```{r}
+#| eval: false
+summary(bio_predictors)
+```
+
+```{r}
+#| eval: false
+ggplot() +
+  geom_sf(data = bio_predictors, aes(fill = BIO1), color = "transparent") +
+  scale_fill_viridis_c(option = "B")
+```
+
+```{r}
+#| eval: false
+lulc_present <- rast(here("rasters_lulc_esri/lulc_esri_cr_2024.tif"))
+```
+
+```{r}
+#| eval: false
+lulc_present
+```
+
+```{r}
+levels(lulc_present$class)
+```
+
+```{r}
+#| eval: false
+lulc_present <- project(lulc_present, "EPSG:5367")
+```
+
+```{r}
+#| eval: false
+lulc_p <- h3sdm_extract_cat(lulc_present, h8_5367, proportion = TRUE)
+```
+
+```{r}
+#| eval: false
+lulc_p
+```
+
+```{r}
+#| eval: false
+it_p <- h3sdm_calculate_it_metrics(lulc_present, h8_5367)
+```
+
+```{r}
+#| eval: false
+pop_2024 <- rast(here("rasters_pop/cri_pop_2024_CN_100m_R2025A_v1.tif"))
+```
+
+```{r}
+#| eval: false
+pop_2024 <- project(pop_2024, "EPSG:5367")
+```
+
+```{r}
+#| eval: false
+pop_2024 <- crop(pop_2024, cr, mask = TRUE)
+```
+
+```{r}
+#| eval: false
+pop_2024[is.na(pop_2024)] <- 0
+```
+
+```{r}
+#| eval: false
+plot(pop_2024)
+```
+
+```{r}
+#| eval: false
+pop_predictor <- h3sdm_extract_num(pop_2024, h8_5367)
+```
+
+```{r}
+#| eval: false
+todos_p_h8 <- mutate(bio_predictors, lulc_p, it_p, pop_predictor)
+```
+
+```{r}
+#| eval: false
+summary(todos_p_h8)
+```
+
+```{r}
+#| include: true
+# se eliminan class_prop_3 y class_prop_6 (pueden ser artefactos de la clasificación, pero son clases inexistentes)
+# se eliminan class_prop_9 y class_prop_10 (snows/ice y clouds)
+# las class_prop_4 y class_prop_8 también se eliminan por que no están bien, son flooded vegetation y bare ground
+todos_p_h8 <- todos_p_h8 |>
+  dplyr::select(h3_address, BIO1, BIO2, BIO3, BIO4, BIO5, BIO6, BIO7, BIO8, BIO9, BIO10, BIO11, BIO12, BIO13, BIO14, BIO15, BIO16, BIO17, BIO18, BIO19, class_prop_1, class_prop_2, class_prop_5, class_prop_7, class_prop_11, lsm_condent, lsm_ent, lsm_joinent, lsm_mutinf, lsm_relmutinf, cri_pop_2024_CN_100m_R2025A_v1, geometry)
+```
+
+```{r}
+#| include: true
+filter_collinear(todos_p_h8)
+```
+
+```{r}
+# eliminar variables correlacionadas
+predictores_finales_h8_sf <- todos_p_h8 |>
+  select(h3_address, BIO2, BIO3, BIO4, BIO13, BIO15, BIO19, class_prop_1, class_prop_2, class_prop_5, class_prop_7,   class_prop_11, lsm_condent, lsm_relmutinf, geometry)
+```
+
+```{r}
+head(predictores_finales_h8_sf)
+```
+
+```{r}
+# Guardar con todas las especies (rds)
+saveRDS(predictores_finales_h8_sf, here("vectores_para_modelos/predictores_presente_finales_h8_sf.rds"))
+```
+
+```{r}
+#| eval: false
+st_write(predictores_finales_h8_sf, here("vectores_para_modelos/predictores_presente_finales_h8_sf.gpkg"), layer_options = "GEOMETRY_NAME=geometry", delete_layer = TRUE)
+```
+
+# Predictores para el futuro
+
+```{r}
+#| eval: false
+bio_f <- terra::rast(here("rasters_bio_chelsa/chelsa_CR_2041_2070_ssp585.tif"))
+```
+
+```{r}
+#| eval: false
+bio_f <- project(bio_f, "EPSG:5367")
+```
+
+```{r}
+#| eval: false
+bio_predictors_f <- h3sdm_extract_num(bio_f, h8_5367)
+```
+
+```{r}
+#| eval: false
+lulc_future <- rast(here("rasters_lulc_esri/lulc2050_cr.tif"))
+```
+
+```{r}
+#| eval: false
+lulc_future
+```
+
+```{r}
+#| eval: false
+lulc_future_5367 <- project(lulc_future, "EPSG:5367", method = "near")
+```
+
+```{r}
+#| eval: false
+writeRaster(lulc_future_5367, 
+            here("rasters_lulc_esri/lulc2050_cr_5367.tif"),
+            datatype = "INT1U",
+            overwrite = TRUE)
+```
+
+```{r}
+#| eval: false
+lulc_future_5367 <- rast(here("rasters_lulc_esri/lulc2050_cr_5367.tif"))
+```
+
+```{r}
+#| eval: false
+reclass_matrix <- matrix(c(
+  1,  5,  # Mostly Cropland -> Crops
+  2,  11, # Grassland/Scrub -> Rangeland
+  3,  2,  # Deciduous Forest -> Trees
+  4,  2,  # Evergreen Forest -> Trees
+  5,  11, # Sparse Vegetation -> Rangeland
+  6,  8,  # Bare Area -> Bare ground
+  7,  4,  # Swampy -> Flooded vegetation
+  8,  7,  # Urban -> Built area
+  9,  1,  # Surface Water -> Water
+  10, 9   # Snow and Ice -> Snow/Ice
+), ncol = 2, byrow = TRUE)
+```
+
+```{r}
+#| eval: false
+lulc_future_5367_reclass <- classify(lulc_future_5367, reclass_matrix)
+```
+
+```{r}
+#| eval: false
+lulc_future_5367_reclass
+```
+
+```{r}
+#| eval: false
+# Asignar levels
+cat_table <- data.frame(
+  value = c(1, 2, 4, 5, 7, 8, 11),
+  class = c("Water", "Trees", "Flooded vegetation",
+            "Crops", "Built area", "Bare ground",
+            "Rangeland")
+)
+```
+
+```{r}
+#| eval: false
+levels(lulc_future_5367_reclass) <- cat_table
+```
+
+```{r}
+#| eval: false
+# Asignar coltab
+coltab(lulc_future_5367_reclass) <- data.frame(
+  value = 0:11,
+  col = c(
+    "#00000000",  # 0 - sin valor
+    "#419bdf",    # 1 - Water
+    "#397d49",    # 2 - Trees
+    "#00000000",  # 3 - no existe
+    "#7a87c6",    # 4 - Flooded vegetation
+    "#e49635",    # 5 - Crops
+    "#00000000",  # 6 - no existe
+    "#c4281b",    # 7 - Built area
+    "#a59b8f",    # 8 - Bare ground
+    "#00000000",  # 9 - Snow/Ice, no existe
+    "#00000000",  # 10 - Clouds, no existe
+    "#e3e2c3"     # 11 - Rangeland
+  )
+)
+```
+
+```{r}
+#| eval: false
+lulc_future_5367_reclass
+```
+
+```{r}
+#| eval: false
+writeRaster(
+  lulc_future_5367_reclass,
+  here("rasters_lulc_esri/lulc_future_5367_reclass.tif"),
+  datatype = "INT1U",
+  overwrite = TRUE
+)
+```
+
+```{r}
+#| eval: false
+lulc_future_5367_reclass <- rast(here("rasters_lulc_esri/lulc_future_5367_reclass.tif"))
+```
+
+```{r}
+#| eval: false
+lulc_future_5367_reclass
+```
+
+```{r}
+#| eval: false
+lulc_future_5367_reclass_resamp <- resample(lulc_future_5367_reclass, lulc_present, method = "near")
+```
+
+```{r}
+#| eval: false
+writeRaster(lulc_future_5367_reclass_resamp,
+            here("rasters_lulc_esri/lulc2050_cr_5367_reclass_10m.tif"),
+            datatype = "INT1U",
+            overwrite = TRUE)
+```
+
+```{r}
+#| include: true
+lulc_future_5367_reclass_10m <- rast(here("rasters_lulc_esri/lulc2050_cr_5367_reclass_10m.tif"))
+```
+
+```{r}
+#| eval: false
+# Visualizar
+plot(lulc_future_5367_reclass_10m)
+```
+
+```{r}
+#| eval: false
+lulc_future_5367_reclass_10m
+```
+
+```{r}
+#| include: true
+lulc_future_fixed <- lulc_future_5367_reclass_10m
+lulc_future_fixed[is.na(lulc_future_fixed)] <- -9999
+```
+
+```{r}
+#| include: true
+levels(lulc_future_fixed)[[1]] <- rbind(
+  levels(lulc_future_fixed)[[1]],
+  data.frame(value = -9999, class = "NoData")
+)
+```
+
+```{r}
+#| eval: false
+lulc_f <- h3sdm_extract_cat(lulc_future_fixed, h8_5367, proportion = TRUE)
+```
+
+```{r}
+#| eval: false
+lulc_f
+```
+
+```{r}
+#| eval: false
+it_p_f <- h3sdm_calculate_it_metrics(lulc_future_fixed, h8_5367)
+```
+
+# Population future
+
+```{r}
+#| eval: false
+pop_2030 <- rast(here("rasters_pop/cri_pop_2030_CN_100m_R2025A_v1.tif"))
+```
+
+```{r}
+#| eval: false
+pop_2030 <- project(pop_2030, "EPSG:5367")
+```
+
+```{r}
+#| eval: false
+pop_2030 <- crop(pop_2030, cr, mask = TRUE)
+```
+
+```{r}
+#| eval: false
+pop_2030[is.na(pop_2030)] <- 0
+```
+
+```{r}
+#| eval: false
+plot(pop_2030)
+```
+
+```{r}
+#| eval: false
+pop_predictor_f <- h3sdm_extract_num(pop_2030, h8_5367)
+```
+
+```{r}
+#| eval: false
+todos_f_h8 <- mutate(bio_predictors_f, lulc_f, it_p_f, pop_predictor_f)
+```
+
+```{r}
+todos_f_h8
+```
+
+```{r}
+# seleccionar solo las variables usadas para el presente
+predictores_futuro_finales_h8 <- todos_f_h8 |>
+  select(h3_address, BIO2, BIO3, BIO4, BIO13, BIO15, BIO19, class_prop_1, class_prop_2, class_prop_5, class_prop_7, class_prop_11, lsm_condent, lsm_relmutinf, geometry)
+```
+
+```{r}
+# Guardar con todas las especies (rds)
+saveRDS(predictores_futuro_finales_h8, here("vectores_para_modelos/predictores_futuro_finales_h8_sf.rds"))
+```
+
+```{r}
+#| eval: false
+st_write(predictores_futuro_finales_h8, here("vectores_para_modelos/predictores_futuro_finales_h8_sf.gpkg"), layer_options = "GEOMETRY_NAME=geometry", delete_layer = TRUE)
+```
