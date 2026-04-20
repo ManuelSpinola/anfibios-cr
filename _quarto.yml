@@ -115,6 +115,108 @@ website:
                 href: reportes/Pristimantis_cruentus.html
               - text: "Pristimantis ridens"
                 href: reportes/Pristimantis_ridens.html
+          - section: "Dendrobatidae"
+            contents:
+              - text: "Dendrobates auratus"
+                href: reportes/Dendrobates_auratus.html
+              - text: "Oophaga granulifera"
+                href: reportes/Oophaga_granulifera.html
+              - text: "Oophaga pumilio"
+                href: reportes/Oophaga_pumilio.html
+              - text: "Phyllobates lugubris"
+                href: reportes/Phyllobates_lugubris.html
+              - text: "Phyllobates vittatus"
+                href: reportes/Phyllobates_vittatus.html
+              - text: "Silverstoneia flotator"
+                href: reportes/Silverstoneia_flotator.html
+          - section: "Eleutherodactylidae"
+            contents:
+              - text: "Diasporus diastema"
+                href: reportes/Diasporus_diastema.html
+              - text: "Diasporus hylaeformis"
+                href: reportes/Diasporus_hylaeformis.html
+              - text: "Diasporus vocator"
+                href: reportes/Diasporus_vocator.html
+          - section: "Hylidae"
+            contents:
+              - text: "Boana rosenbergi"
+                href: reportes/Boana_rosenbergi.html
+              - text: "Boana rufitela"
+                href: reportes/Boana_rufitela.html
+              - text: "Dendropsophus ebraccatus"
+                href: reportes/Dendropsophus_ebraccatus.html
+              - text: "Dendropsophus microcephalus"
+                href: reportes/Dendropsophus_microcephalus.html
+              - text: "Dendropsophus phlebodes"
+                href: reportes/Dendropsophus_phlebodes.html
+              - text: "Duellmanohyla rufioculis"
+                href: reportes/Duellmanohyla_rufioculis.html
+              - text: "Duellmanohyla uranochroa"
+                href: reportes/Duellmanohyla_uranochroa.html
+              - text: "Isthmohyla lancasteri"
+                href: reportes/Isthmohyla_lancasteri.html
+              - text: "Isthmohyla pictipes"
+                href: reportes/Isthmohyla_pictipes.html
+              - text: "Isthmohyla pseudopuma"
+                href: reportes/Isthmohyla_pseudopuma.html
+              - text: "Isthmohyla rivularis"
+                href: reportes/Isthmohyla_rivularis.html
+              - text: "Isthmohyla tica"
+                href: reportes/Isthmohyla_tica.html
+              - text: "Ptychohyla legleri"
+                href: reportes/Ptychohyla_legleri.html
+              - text: "Scinax boulengeri"
+                href: reportes/Scinax_boulengeri.html
+              - text: "Scinax elaeochroa"
+                href: reportes/Scinax_elaeochroa.html
+              - text: "Scinax staufferi"
+                href: reportes/Scinax_staufferi.html
+              - text: "Smilisca baudinii"
+                href: reportes/Smilisca_baudinii.html
+              - text: "Smilisca manisorum"
+                href: reportes/Smilisca_manisorum.html
+              - text: "Smilisca phaeota"
+                href: reportes/Smilisca_phaeota.html
+              - text: "Smilisca puma"
+                href: reportes/Smilisca_puma.html
+              - text: "Smilisca sila"
+                href: reportes/Smilisca_sila.html
+              - text: "Smilisca sordida"
+                href: reportes/Smilisca_sordida.html
+              - text: "Tlalocohyla celeste"
+                href: reportes/Tlalocohyla_celeste.html
+              - text: "Tlalocohyla loquax"
+                href: reportes/Tlalocohyla_loquax.html
+              - text: "Trachycephalus macrotis"
+                href: reportes/Trachycephalus_macrotis.html
+              - text: "Trachycephalus typhonius"
+                href: reportes/Trachycephalus_typhonius.html
+              - text: "Triprion spinosus"
+                href: reportes/Triprion_spinosus.html
+          - section: "Leptodactylidae"
+            contents:
+              - text: "Engystomops pustulosus"
+                href: reportes/Engystomops_pustulosus.html
+              - text: "Leptodactylus bolivianus"
+                href: reportes/Leptodactylus_bolivianus.html
+              - text: "Leptodactylus fragilis"
+                href: reportes/Leptodactylus_fragilis.html
+              - text: "Leptodactylus insularum"
+                href: reportes/Leptodactylus_insularum.html
+              - text: "Leptodactylus melanonotus"
+                href: reportes/Leptodactylus_melanonotus.html
+              - text: "Leptodactylus pentadactylus"
+                href: reportes/Leptodactylus_pentadactylus.html
+              - text: "Leptodactylus poecilochilus"
+                href: reportes/Leptodactylus_poecilochilus.html
+              - text: "Leptodactylus savagei"
+                href: reportes/Leptodactylus_savagei.html
+          - section: "Microhylidae"
+            contents:
+              - text: "Hypopachus pictiventris"
+                href: reportes/Hypopachus_pictiventris.html
+              - text: "Hypopachus variolosus"
+                href: reportes/Hypopachus_variolosus.html
       - section: "Caudata"
         contents: []
       - section: "Gymnophiona"

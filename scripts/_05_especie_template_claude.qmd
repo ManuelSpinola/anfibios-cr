@@ -2,7 +2,7 @@
 title: "`r params$species`"
 subtitle: "`r paste(tax_especie$order, '>', tax_especie$family)`"
 params:
-  species: "Craugastor gabbi"
+  species: "Ctenophryne aterrima"
 format:
   html:
     toc: true
@@ -44,7 +44,7 @@ all |>
 
 ```{r}
 all |> 
-  filter(family == "Craugastoridae") |> 
+  filter(family == "Microhylidae") |> 
   count(species) |> 
   arrange(n)
 ```

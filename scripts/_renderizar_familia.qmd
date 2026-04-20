@@ -25,7 +25,7 @@ Cambiar aquí el orden y la familia que quieres renderizar:
 #| label: seleccion
 
 orden_actual   <- "Anura"
-familia_actual <- "Craugastoridae"
+familia_actual <- "Microhylidae"
 ```
 
 ------------------------------------------------------------------------
